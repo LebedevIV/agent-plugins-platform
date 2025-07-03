@@ -1,41 +1,82 @@
-import sys
-import json
 from typing import Any, Dict
-import asyncio
 
-# --- Эта функция остается асинхронной и правильной ---
-async def analyze_ozon_product(data: Dict[str, Any]) -> Dict[str, Any]:
-    await js.sendMessageToChat_bridge({"content": "Начинаю анализ страницы..."}) # type: ignore
+# Никаких `requests` или `pyodide_http`. Вся работа с сетью делегирована.
+# `js` - это глобальный объект, который предоставляет Pyodide для вызова
+# JavaScript-функций, определенных в `pyodide-worker.js`.
+# Мы используем `# type: ignore`, чтобы редактор не ругался на неопределенный `js`.
 
-    page_content_proxy = await js.getActivePageContent_bridge({"title": "h1"}) # type: ignore
-    page_content: Dict[str, Any] = page_content_proxy.to_py()
+# --- Наш главный асинхронный инструмент ---
 
-    await js.sendMessageToChat_bridge({"content": f"Получен заголовок: {page_content.get('title')}"}) # type: ignore
+async def fetch_current_time(input_data: Any) -> Dict[str, Any]:
+    """
+    Асинхронно просит хост-систему (JavaScript) сделать сетевой запрос
+    и дожидается результата.
+
+    Args:
+        input_data: JsProxy-объект, содержащий поле 'timezone'.
     
-    final_message = f"Анализ завершен. Найдено {page_content.get('reviews_count', 0)} отзывов."
-    await js.sendMessageToChat_bridge({"content": final_message}) # type: ignore
-
-    return { "status": "success", "message": "Done." }
-
-# --- Главная функция теперь тоже асинхронна ---
-async def main() -> None:
+    Returns:
+        Словарь с результатом операции.
+    """
+    # 1. Получаем входные данные из JsProxy
+    timezone = input_data.timezone
+    api_url = f"https://worldtimeapi.org/api/timezone/{timezone}"
+    
+    # 2. Логируем наши намерения в UI
+    js.sendMessageToChat({"content": f"Python: Прошу хост сделать GET-запрос на {api_url}"}) # type: ignore
+    
     try:
-        line = sys.stdin.readline()
-        if not line: return
-        request: Dict[str, Any] = json.loads(line)
-        tool_name = request.get("tool")
-        tool_input = request.get("input")
-        result = None
-        if tool_name == "analyze-ozon-product":
-            result = await analyze_ozon_product(tool_input or {})
-        else:
-            result = {"error": f"Unknown tool: {tool_name}"}
-        response = {"id": request.get("id"), "result": result}
-        sys.stdout.write(json.dumps(response) + '\n')
-    except Exception as e:
-        import traceback
-        error_info = traceback.format_exc()
-        sys.stdout.write(json.dumps({"error": error_info}) + '\n')
+        js.sendMessageToChat({"content": f"Python: Ожидаю (await) ответ от хоста..."}) # type: ignore
+        
+        # 3. КЛЮЧЕВОЙ МОМЕНТ:
+        #    - `js.host_fetch(api_url)` возвращает JS Promise, который в Python видится как PyodideFuture.
+        #    - `await` дожидается выполнения этого Promise.
+        #    - Pyodide автоматически конвертирует результат (JS-объект) в Python-объект (dict).
+        #    - Поэтому мы сразу получаем готовый словарь, и .to_py() больше не нужен.
+        response_dict = await js.host_fetch(api_url)
+        
+        # 4. Логируем то, что получили, для отладки
+        js.sendMessageToChat({"content": f"Python: Получен ответ от хоста: {response_dict}"}) # type: ignore
 
-# ▼▼▼ ГЛАВНОЕ: НЕТ НИКАКОГО ВЫЗОВА В КОНЦЕ ФАЙЛА! ▼▼▼
-# Файл просто определяет функции и заканчивается.
+        # 5. Проверяем, что результат действительно является словарем
+        if not isinstance(response_dict, dict):
+            raise Exception(f"Хост вернул не словарь, а {type(response_dict)}")
+        
+        # 6. Проверяем, не вернул ли хост ошибку в структурированном виде
+        if response_dict.get("error"):
+             raise Exception(response_dict.get("error_message", "Неизвестная ошибка от хоста"))
+
+        # 7. Обрабатываем успешный результат
+        time_data = response_dict.get("data")
+        if not time_data:
+            raise Exception("В ответе от хоста отсутствует ключ 'data'")
+
+        current_time = time_data.get("datetime")
+        summary = f"Python: Запрос успешен! Текущее время в {timezone}: {current_time}"
+        js.sendMessageToChat({"content": summary}) # type: ignore
+        
+        # 8. Возвращаем финальный результат движку воркфлоу
+        return {
+            "status": "success",
+            "data": time_data
+        }
+        
+    except Exception as e:
+        # Ловим любые ошибки: от хоста, при парсинге, и т.д.
+        error_message = f"Python: Ошибка при выполнении запроса через хост: {e}"
+        js.sendMessageToChat({"content": error_message}) # type: ignore
+        return { "status": "error", "error": str(e) }
+
+# --- Старая синхронная функция для примера и обратной совместимости ---
+
+def analyze_headings(input_data: Any) -> Dict[str, Any]:
+    """
+    Стабильная синхронная функция для анализа заголовков.
+    Не имеет внешних зависимостей и не делает асинхронных вызовов.
+    """
+    headings_list = input_data.headings_list.to_py()
+    number_of_headings = len(headings_list)
+    js.sendMessageToChat({"content": f"Python: (analyze_headings) получил {number_of_headings} заголовков."}) # type: ignore
+    summary = f"Python: Анализ заголовков завершен."
+    js.sendMessageToChat({"content": summary}) # type: ignore
+    return {"status": "success", "total_headings": number_of_headings}
