@@ -236,9 +236,12 @@ window.saveAIKeys = function() {
     try {
         const keys = {
             'gemini-flash': document.getElementById('gemini-flash-key').value,
-            'gemini-pro': document.getElementById('gemini-pro-key').value,
             'gemini-25': document.getElementById('gemini-25-key').value
         };
+        
+        // Добавляем пользовательские ключи
+        const customKeys = getCustomKeys();
+        Object.assign(keys, customKeys);
         
         // Сохраняем в localStorage
         localStorage.setItem('aiApiKeys', JSON.stringify(keys));
@@ -289,13 +292,13 @@ window.testAIKeys = async function() {
 function updateKeyStatuses(testResults = null) {
     const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
     
-    const statusElements = {
+    // Обновляем статусы фиксированных ключей
+    const fixedStatusElements = {
         'gemini-flash': document.getElementById('gemini-flash-status'),
-        'gemini-pro': document.getElementById('gemini-pro-status'),
         'gemini-25': document.getElementById('gemini-25-status')
     };
     
-    for (const [keyName, statusElement] of Object.entries(statusElements)) {
+    for (const [keyName, statusElement] of Object.entries(fixedStatusElements)) {
         if (statusElement) {
             const hasKey = keys[keyName] && keys[keyName].length > 0;
             const isTested = testResults && keyName in testResults;
@@ -312,6 +315,95 @@ function updateKeyStatuses(testResults = null) {
             }
         }
     }
+    
+    // Обновляем статусы пользовательских ключей
+    const customKeyElements = document.querySelectorAll('.custom-key-item');
+    customKeyElements.forEach(element => {
+        const keyId = element.id;
+        const statusElement = element.querySelector('.key-status');
+        const keyInput = element.querySelector('input[type="password"]');
+        
+        if (statusElement && keyInput) {
+            const hasKey = keyInput.value && keyInput.value.length > 0;
+            const isTested = testResults && keyId in testResults;
+            
+            if (isTested && testResults[keyId]) {
+                statusElement.textContent = 'Работает';
+                statusElement.className = 'key-status configured';
+            } else if (hasKey) {
+                statusElement.textContent = 'Настроен';
+                statusElement.className = 'key-status configured';
+            } else {
+                statusElement.textContent = 'Не настроен';
+                statusElement.className = 'key-status';
+            }
+        }
+    });
+}
+
+// Добавление пользовательского ключа
+window.addCustomKey = function() {
+    const customKeysList = document.getElementById('custom-keys-list');
+    const keyId = 'custom-key-' + Date.now();
+    
+    const keyHtml = `
+        <div class="custom-key-item" id="${keyId}">
+            <button class="remove-key-btn" onclick="removeCustomKey('${keyId}')">Удалить</button>
+            <div class="ai-key-header">
+                <h4>
+                    <input type="text" class="key-name-input" placeholder="Название нейросети" 
+                           onchange="updateCustomKeyName('${keyId}', this.value)">
+                </h4>
+                <span class="key-status" id="${keyId}-status">Не настроен</span>
+                <span class="key-badge paid">Платный</span>
+            </div>
+            <div class="ai-key-input">
+                <input type="password" id="${keyId}-key" placeholder="Введите API ключ">
+                <button onclick="pasteFromClipboard('${keyId}-key')">Вставить</button>
+                <button onclick="copyToClipboard('${keyId}-key')">Копировать</button>
+            </div>
+            <div class="curl-validator">
+                <input type="text" id="${keyId}-curl" placeholder="Вставьте curl запрос для извлечения ключа">
+                <button onclick="extractKeyFromCurl('${keyId}-curl', '${keyId}-key')">Извлечь ключ</button>
+            </div>
+        </div>
+    `;
+    
+    customKeysList.insertAdjacentHTML('beforeend', keyHtml);
+    showSuccessToast('Добавлен новый ключ');
+}
+
+// Удаление пользовательского ключа
+window.removeCustomKey = function(keyId) {
+    const keyElement = document.getElementById(keyId);
+    if (keyElement) {
+        keyElement.remove();
+        showSuccessToast('Ключ удален');
+    }
+}
+
+// Обновление названия пользовательского ключа
+window.updateCustomKeyName = function(keyId, name) {
+    // Сохраняем название в localStorage
+    const customKeyNames = JSON.parse(localStorage.getItem('customKeyNames') || '{}');
+    customKeyNames[keyId] = name;
+    localStorage.setItem('customKeyNames', JSON.stringify(customKeyNames));
+}
+
+// Получение пользовательских ключей
+function getCustomKeys() {
+    const customKeys = {};
+    const customKeyElements = document.querySelectorAll('.custom-key-item');
+    
+    customKeyElements.forEach(element => {
+        const keyId = element.id;
+        const keyInput = element.querySelector('input[type="password"]');
+        if (keyInput && keyInput.value) {
+            customKeys[keyId] = keyInput.value;
+        }
+    });
+    
+    return customKeys;
 }
 
 // Загрузка сохраненных ключей
@@ -322,17 +414,55 @@ function loadSavedKeys() {
         if (keys['gemini-flash']) {
             document.getElementById('gemini-flash-key').value = keys['gemini-flash'];
         }
-        if (keys['gemini-pro']) {
-            document.getElementById('gemini-pro-key').value = keys['gemini-pro'];
-        }
         if (keys['gemini-25']) {
             document.getElementById('gemini-25-key').value = keys['gemini-25'];
         }
+        
+        // Загружаем пользовательские ключи
+        loadCustomKeys(keys);
         
         updateKeyStatuses();
     } catch (error) {
         console.error('Ошибка загрузки ключей:', error);
     }
+}
+
+// Загрузка пользовательских ключей
+function loadCustomKeys(keys) {
+    const customKeyNames = JSON.parse(localStorage.getItem('customKeyNames') || '{}');
+    
+    Object.keys(keys).forEach(keyId => {
+        if (keyId.startsWith('custom-key-') && keys[keyId]) {
+            // Воссоздаем элемент пользовательского ключа
+            const customKeysList = document.getElementById('custom-keys-list');
+            const keyName = customKeyNames[keyId] || 'Пользовательская нейросеть';
+            
+            const keyHtml = `
+                <div class="custom-key-item" id="${keyId}">
+                    <button class="remove-key-btn" onclick="removeCustomKey('${keyId}')">Удалить</button>
+                    <div class="ai-key-header">
+                        <h4>
+                            <input type="text" class="key-name-input" value="${keyName}" 
+                                   onchange="updateCustomKeyName('${keyId}', this.value)">
+                        </h4>
+                        <span class="key-status" id="${keyId}-status">Не настроен</span>
+                        <span class="key-badge paid">Платный</span>
+                    </div>
+                    <div class="ai-key-input">
+                        <input type="password" id="${keyId}-key" value="${keys[keyId]}" placeholder="Введите API ключ">
+                        <button onclick="pasteFromClipboard('${keyId}-key')">Вставить</button>
+                        <button onclick="copyToClipboard('${keyId}-key')">Копировать</button>
+                    </div>
+                    <div class="curl-validator">
+                        <input type="text" id="${keyId}-curl" placeholder="Вставьте curl запрос для извлечения ключа">
+                        <button onclick="extractKeyFromCurl('${keyId}-curl', '${keyId}-key')">Извлечь ключ</button>
+                    </div>
+                </div>
+            `;
+            
+            customKeysList.insertAdjacentHTML('beforeend', keyHtml);
+        }
+    });
 }
 
 // --- Запускаем все при загрузке страницы ---

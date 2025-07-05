@@ -1,4 +1,4 @@
-// Sidebar Chat System
+// Система боковой панели
 class SidebarChat {
     constructor() {
         this.currentTabId = null;
@@ -69,7 +69,7 @@ class SidebarChat {
                 const urlObj = new URL(url);
                 pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
                 
-                console.log('Sidebar: Загружена вкладка из URL параметров', { tabId: this.currentTabId, url: this.currentUrl });
+                console.log('Боковая панель: Загружена вкладка из URL параметров', { tabId: this.currentTabId, url: this.currentUrl });
             } else {
                 // Fallback: получаем активную вкладку
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -80,10 +80,10 @@ class SidebarChat {
                 const urlObj = new URL(tab.url);
                 pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
                 
-                console.log('Sidebar: Fallback загрузка вкладки', { tabId: this.currentTabId, url: this.currentUrl });
+                console.log('Боковая панель: Fallback загрузка вкладки', { tabId: this.currentTabId, url: this.currentUrl });
             }
         } catch (error) {
-            console.error('Sidebar: Ошибка загрузки вкладки', error);
+            console.error('Боковая панель: Ошибка загрузки вкладки', error);
             const pageInfo = document.querySelector('.page-info');
             pageInfo.textContent = 'Ошибка загрузки страницы';
         }

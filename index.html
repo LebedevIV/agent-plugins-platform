@@ -23,10 +23,12 @@
             <div class="settings-section">
               <h3>API Ключи нейросетей</h3>
               <div id="ai-keys-settings">
-                <div class="ai-key-item">
+                <!-- Фиксированные ключи (неудаляемые) -->
+                <div class="ai-key-item fixed-key">
                   <div class="ai-key-header">
-                    <h4>Google Gemini (Flash)</h4>
+                    <h4>Google Gemini (Flash) - Базовый анализ</h4>
                     <span class="key-status" id="gemini-flash-status">Не настроен</span>
+                    <span class="key-badge free">Бесплатный</span>
                   </div>
                   <div class="ai-key-input">
                     <input type="password" id="gemini-flash-key" placeholder="Введите API ключ">
@@ -39,26 +41,11 @@
                   </div>
                 </div>
                 
-                <div class="ai-key-item">
+                <div class="ai-key-item fixed-key">
                   <div class="ai-key-header">
-                    <h4>Google Gemini Pro</h4>
-                    <span class="key-status" id="gemini-pro-status">Не настроен</span>
-                  </div>
-                  <div class="ai-key-input">
-                    <input type="password" id="gemini-pro-key" placeholder="Введите API ключ">
-                    <button onclick="pasteFromClipboard('gemini-pro-key')">Вставить</button>
-                    <button onclick="copyToClipboard('gemini-pro-key')">Копировать</button>
-                  </div>
-                  <div class="curl-validator">
-                    <input type="text" id="gemini-pro-curl" placeholder="Вставьте curl запрос для извлечения ключа">
-                    <button onclick="extractKeyFromCurl('gemini-pro-curl', 'gemini-pro-key')">Извлечь ключ</button>
-                  </div>
-                </div>
-                
-                <div class="ai-key-item">
-                  <div class="ai-key-header">
-                    <h4>Gemini 2.5 Pro (Глубокий анализ)</h4>
+                    <h4>Gemini 2.5 Pro - Глубокий анализ</h4>
                     <span class="key-status" id="gemini-25-status">Не настроен</span>
+                    <span class="key-badge free">Бесплатный</span>
                   </div>
                   <div class="ai-key-input">
                     <input type="password" id="gemini-25-key" placeholder="Введите API ключ">
@@ -69,6 +56,15 @@
                     <input type="text" id="gemini-25-curl" placeholder="Вставьте curl запрос для извлечения ключа">
                     <button onclick="extractKeyFromCurl('gemini-25-curl', 'gemini-25-key')">Извлечь ключ</button>
                   </div>
+                </div>
+                
+                <!-- Пользовательские ключи (удаляемые) -->
+                <div class="custom-keys-section">
+                  <h4>Пользовательские API ключи</h4>
+                  <div id="custom-keys-list">
+                    <!-- Здесь будут добавляться пользовательские ключи -->
+                  </div>
+                  <button onclick="addCustomKey()" class="add-key-btn">+ Добавить новый ключ</button>
                 </div>
               </div>
               <div class="settings-actions">

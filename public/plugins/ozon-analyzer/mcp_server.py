@@ -182,18 +182,84 @@ async def get_ai_api_key(model_name: str) -> str:
         return ""
 
 async def call_ai_model(model_name: str, prompt: str) -> str:
-    """Вызывает указанную нейросеть с промптом"""
+    """Вызывает указанную нейросеть с промптом с обработкой лимитов"""
     try:
         api_key = await get_ai_api_key(model_name)
         if not api_key:
             return f"Ошибка: API ключ для {model_name} не настроен"
         
+        # Проверяем лимиты перед вызовом
+        rate_limit_info = await check_rate_limit(model_name)
+        if rate_limit_info['limited']:
+            return await handle_rate_limit(model_name, rate_limit_info, prompt)
+        
         # В реальной реализации здесь будет вызов API нейросети
         # Пока возвращаем заглушку
-        return f"Ответ от {model_name}: {prompt[:50]}..."
+        result = f"Ответ от {model_name}: {prompt[:50]}..."
+        
+        # Обновляем статистику использования
+        await update_usage_stats(model_name)
+        
+        return result
         
     except Exception as e:
         return f"Ошибка вызова {model_name}: {str(e)}"
+
+async def check_rate_limit(model_name: str) -> Dict[str, Any]:
+    """Проверяет лимиты для указанной модели"""
+    try:
+        # В реальной реализации здесь будет проверка лимитов API
+        # Пока возвращаем заглушку
+        return {
+            'limited': False,
+            'reset_time': None,
+            'remaining_requests': 1000
+        }
+    except Exception as e:
+        print(f"Ошибка проверки лимитов для {model_name}: {e}")
+        return {'limited': False, 'reset_time': None, 'remaining_requests': 0}
+
+async def handle_rate_limit(model_name: str, rate_limit_info: Dict[str, Any], prompt: str) -> str:
+    """Обрабатывает ситуацию с лимитами API"""
+    try:
+        # Получаем доступные альтернативные модели
+        alternative_models = await get_alternative_models(model_name)
+        
+        # Пытаемся использовать альтернативную модель
+        for alt_model in alternative_models:
+            alt_rate_limit = await check_rate_limit(alt_model)
+            if not alt_rate_limit['limited']:
+                print(f"Переключаемся на альтернативную модель: {alt_model}")
+                return await call_ai_model(alt_model, prompt)
+        
+        # Если альтернативы недоступны, возвращаем информацию о лимите
+        reset_time = rate_limit_info.get('reset_time')
+        if reset_time:
+            return f"Лимит API для {model_name} превышен. Повторить запрос после {reset_time} или использовать другую модель."
+        else:
+            return f"Лимит API для {model_name} превышен. Попробуйте позже или используйте другую модель."
+            
+    except Exception as e:
+        return f"Ошибка обработки лимита для {model_name}: {str(e)}"
+
+async def get_alternative_models(model_name: str) -> List[str]:
+    """Возвращает список альтернативных моделей"""
+    # Определяем альтернативы для каждой модели
+    alternatives = {
+        'gemini-flash': ['gemini-25'],
+        'gemini-25': ['gemini-flash'],
+        'gemini-pro': ['gemini-flash', 'gemini-25']
+    }
+    
+    return alternatives.get(model_name, [])
+
+async def update_usage_stats(model_name: str):
+    """Обновляет статистику использования модели"""
+    try:
+        # В реальной реализации здесь будет обновление статистики
+        print(f"Обновлена статистика использования для {model_name}")
+    except Exception as e:
+        print(f"Ошибка обновления статистики для {model_name}: {e}")
 
 async def check_deep_analysis_availability() -> bool:
     """Проверяет доступность глубокого анализа"""
