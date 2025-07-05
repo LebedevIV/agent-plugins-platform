@@ -4,5 +4,8 @@
   
     // Мы отключаем только одно правило, которое мешает нам
     // использовать 'js' и другие динамические объекты.
-    "reportUnknownMemberType": "none" 
+    "reportUnknownMemberType": "none",
+    
+    // Отключаем предупреждения о недостающих импортах для Pyodide
+    "reportMissingImports": "none"
   }

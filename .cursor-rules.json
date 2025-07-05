@@ -1,10 +1,41 @@
 {
     "rules": [
-      { "name": "Project Brief", "context": { "url": { "url": "https://gist.github.com/LebedevIV/0a20b9aa7dd00c9d91a975e25d72bdc8/raw/4dbda2ff6cb22409d117d2380c017339c2652e2f/projectbrief.md", "type": "context" } } },
-      { "name": "Product Context", "context": { "url": { "url": "https://gist.github.com/LebedevIV/0a20b9aa7dd00c9d91a975e25d72bdc8/raw/4dbda2ff6cb22409d117d2380c017339c2652e2f/productContext.md", "type": "context" } } },
-      { "name": "Tech Context", "context": { "url": { "url": "https://gist.github.com/LebedevIV/0a20b9aa7dd00c9d91a975e25d72bdc8/raw/4dbda2ff6cb22409d117d2380c017339c2652e2f/techContext.md", "type": "context" } } },
-      { "name": "System Patterns & Graveyard", "context": { "url": { "url": "https://gist.github.com/LebedevIV/0a20b9aa7dd00c9d91a975e25d72bdc8/raw/4dbda2ff6cb22409d117d2380c017339c2652e2f/systemPatterns.md", "type": "context" } } },
-      { "name": "Progress", "context": { "url": { "url": "https://gist.github.com/LebedevIV/0a20b9aa7dd00c9d91a975e25d72bdc8/raw/4dbda2ff6cb22409d117d2380c017339c2652e2f/progress.md", "type": "context" } } },
-      { "name": "Active Context", "context": { "url": { "url": "https://gist.github.com/LebedevIV/0a20b9aa7dd00c9d91a975e25d72bdc8/raw/4dbda2ff6cb22409d117d2380c017339c2652e2f/activeContext.md", "type": "context" } } }
+      {
+        "name": "AI DNA - Сущность и Принципы",
+        "description": "Основные принципы, ключевые инсайты и стиль работы AI-ассистента",
+        "context": { 
+          "url": { 
+            "url": "https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/6ef21fa8877261f21eae0e2296268cff897fce22/ai-dna.md", 
+            "type": "context" 
+          } 
+        }
+      },
+      {
+        "name": "Контекст Проекта - Видение и Архитектура",
+        "description": "Видение проекта, архитектура, техстек и паттерны",
+        "context": { 
+          "url": { 
+            "url": "https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/6ef21fa8877261f21eae0e2296268cff897fce22/project-context.md", 
+            "type": "context" 
+          } 
+        }
+      },
+      {
+        "name": "Текущее Состояние - Прогресс и Задачи",
+        "description": "Текущий прогресс, активные задачи и известные проблемы",
+        "context": { 
+          "url": { 
+            "url": "https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/6ef21fa8877261f21eae0e2296268cff897fce22/current-state.md", 
+            "type": "context" 
+          } 
+        }
+      }
+    ],
+    "notes": [
+      "Обязательные файлы: ai-dna.md и project-context.md (загружаются всегда)",
+      "Опциональный файл: current-state.md (загружается при активной работе над проектом)",
+      "recovery-guide.md не загружается автоматически, используется только при восстановлении",
+      "Альтернатива: consolidated-context.md (полный контекст в одном файле) - для быстрого восстановления",
+      "Gist создан и ссылки обновлены: https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c"
     ]
   }
