@@ -22,7 +22,23 @@ export async function runWorkflow(pluginId) {
   const workflow = await loadWorkflowDefinition(pluginId, logger);
   if (!workflow) return;
 
-  const context = { steps: {}, logger: logger };
+  // Получаем HTML страницы для передачи в плагины
+  let pageHtml = '';
+  try {
+    if (window.hostApi && typeof window.hostApi.getActivePageContent === 'function') {
+      const pageContent = await window.hostApi.getActivePageContent();
+      pageHtml = pageContent.html || '';
+      logger.addMessage('ENGINE', `📄 Получен HTML страницы (${pageHtml.length} символов)`);
+    }
+  } catch (error) {
+    logger.addMessage('WARNING', `⚠️ Не удалось получить HTML страницы: ${error.message}`);
+  }
+
+  const context = { 
+    steps: {}, 
+    logger: logger,
+    page_html: pageHtml
+  };
 
   for (const step of workflow.steps) {
     logger.addMessage('ENGINE', `➡️ Выполнение шага: ${step.id} (инструмент: ${step.tool})`);

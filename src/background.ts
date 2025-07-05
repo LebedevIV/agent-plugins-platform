@@ -10,6 +10,149 @@
 console.log("APP Background Script Loaded (v0.9.1 - Sidebar Chat System).");
 
 //================================================================//
+//  0. СИСТЕМА УПРАВЛЕНИЯ СОСТОЯНИЕМ ПО ВКЛАДКАМ
+//================================================================//
+
+// Типы для состояния вкладки
+interface TabState {
+    tabId: number;
+    url: string;
+    chatHistory: ChatMessage[];
+    currentInput: string;
+    activePlugins: Set<string>;
+    lastActivity: number;
+}
+
+interface ChatMessage {
+    id: string;
+    type: 'user' | 'system' | 'plugin';
+    content: string;
+    timestamp: number;
+    pluginName?: string;
+}
+
+// Хранилище состояния по вкладкам
+const tabStates = new Map<number, TabState>();
+
+/**
+ * Получает или создает состояние для вкладки
+ */
+function getOrCreateTabState(tabId: number, url?: string): TabState {
+    if (!tabStates.has(tabId)) {
+        tabStates.set(tabId, {
+            tabId,
+            url: url || '',
+            chatHistory: [],
+            currentInput: '',
+            activePlugins: new Set(),
+            lastActivity: Date.now()
+        });
+    }
+    return tabStates.get(tabId)!;
+}
+
+/**
+ * Обновляет состояние вкладки и отправляет его в сайдбар
+ */
+async function setTabState(tabId: number, state: TabState): Promise<void> {
+    tabStates.set(tabId, state);
+    await sendStateToSidePanel(tabId);
+}
+
+/**
+ * Отправляет состояние вкладки в сайдбар
+ */
+async function sendStateToSidePanel(tabId: number): Promise<void> {
+    try {
+        const state = getOrCreateTabState(tabId);
+        console.log('[Background] Отправка состояния в сайдбар для вкладки:', tabId, state);
+        
+        // Отправляем сообщение в сайдпанел через chrome.runtime.sendMessage
+        // Сайдпанел слушает эти сообщения и обновляется соответственно
+        await chrome.runtime.sendMessage({
+            type: 'STATE_UPDATE',
+            tabId,
+            state: {
+                ...state,
+                activePlugins: Array.from(state.activePlugins)
+            }
+        });
+    } catch (error) {
+        console.error('[Background] Ошибка отправки состояния в сайдбар:', error);
+    }
+}
+
+/**
+ * Обрабатывает сообщения от сайдбара
+ */
+async function handleSidebarMessage(message: any, sender: any): Promise<any> {
+    const tabId = message.tabId;
+    
+    switch (message.type) {
+        case 'UPDATE_INPUT':
+            if (tabId) {
+                const state = getOrCreateTabState(tabId);
+                state.currentInput = message.input;
+                state.lastActivity = Date.now();
+                await setTabState(tabId, state);
+            }
+            break;
+            
+        case 'SEND_MESSAGE':
+            if (tabId) {
+                const state = getOrCreateTabState(tabId);
+                const newMessage: ChatMessage = {
+                    id: Date.now().toString(),
+                    type: 'user',
+                    content: message.content,
+                    timestamp: Date.now()
+                };
+                state.chatHistory.push(newMessage);
+                state.currentInput = '';
+                state.lastActivity = Date.now();
+                await setTabState(tabId, state);
+            }
+            break;
+            
+        case 'CLEAR_CHAT':
+            if (tabId) {
+                const state = getOrCreateTabState(tabId);
+                state.chatHistory = [];
+                state.lastActivity = Date.now();
+                await setTabState(tabId, state);
+            }
+            break;
+            
+        case 'GET_STATE':
+            if (tabId) {
+                const state = getOrCreateTabState(tabId);
+                return {
+                    success: true,
+                    state: {
+                        ...state,
+                        activePlugins: Array.from(state.activePlugins)
+                    }
+                };
+            }
+            break;
+            
+        case 'RUN_PLUGIN':
+            if (tabId && message.pluginName) {
+                console.log('[Background] Запуск плагина из сайдбара:', message.pluginName, 'для вкладки:', tabId);
+                return await runPluginCommand(message.pluginName, tabId);
+            }
+            break;
+            
+        case 'INTERRUPT_PLUGIN':
+            if (tabId && message.pluginName) {
+                console.log('[Background] Прерывание плагина из сайдбара:', message.pluginName, 'для вкладки:', tabId);
+                return await interruptPluginCommand(message.pluginName);
+            }
+            break;
+    }
+}
+
+//================================================================//
 //  1. РЕАЛИЗАЦИЯ HOST API
 //================================================================//
 
@@ -287,6 +430,8 @@ const hostApiImpl = {
         func: () => ({
           title: document.title,
           content: document.body.innerText,
+          html: document.documentElement.outerHTML,
+          url: window.location.href
         }),
       });
 
@@ -353,17 +498,17 @@ async function getPluginsList(url?: string): Promise<any[]> {
     const knownPlugins = [
       {
         name: 'ozon-analyzer',
-        description: 'Анализатор товаров Ozon',
+        description: 'Анализатор товаров Ozon с проверкой соответствия описания и состава',
         version: '1.0.0',
         auto: false,
         host_permissions: ['*://*.ozon.ru/*']
       },
       {
-        name: 'test-plugin',
-        description: 'Тестовый плагин для демонстрации',
+        name: 'time-test',
+        description: 'Тестовый плагин для проверки запросов времени',
         version: '1.0.0',
         auto: false,
-        host_permissions: ['<all_urls>']
+        host_permissions: ['*://*.worldtimeapi.org/*']
       },
       {
         name: 'google-helper',
@@ -404,6 +549,24 @@ async function runPluginCommand(pluginName: string, tabId?: number): Promise<any
   try {
     console.log(`[Background] Запуск плагина ${pluginName} для вкладки ${tabId}`);
     
+    if (tabId) {
+      // Обновляем состояние вкладки
+      const state = getOrCreateTabState(tabId);
+      state.activePlugins.add(pluginName);
+      
+      // Добавляем сообщение о запуске плагина
+      const pluginMessage: ChatMessage = {
+        id: Date.now().toString(),
+        type: 'plugin',
+        content: `Плагин ${pluginName} запущен`,
+        timestamp: Date.now(),
+        pluginName
+      };
+      state.chatHistory.push(pluginMessage);
+      
+      await setTabState(tabId, state);
+    }
+    
     // Здесь будет интеграция с существующей системой плагинов
     // Пока возвращаем успех для тестирования
     return { success: true, message: `Плагин ${pluginName} запущен` };
@@ -420,12 +583,84 @@ async function interruptPluginCommand(pluginName: string, sessionId?: string): P
   try {
     console.log(`[Background] Прерывание плагина ${pluginName}, сессия ${sessionId}`);
     
+    // Находим вкладку, на которой работает плагин
+    for (const [tabId, state] of tabStates.entries()) {
+      if (state.activePlugins.has(pluginName)) {
+        // Удаляем плагин из активных
+        state.activePlugins.delete(pluginName);
+        
+        // Добавляем сообщение о прерывании плагина
+        const pluginMessage: ChatMessage = {
+          id: Date.now().toString(),
+          type: 'plugin',
+          content: `Плагин ${pluginName} прерван`,
+          timestamp: Date.now(),
+          pluginName
+        };
+        state.chatHistory.push(pluginMessage);
+        
+        await setTabState(tabId, state);
+        break;
+      }
+    }
+    
     // Здесь будет логика прерывания плагина
     // Пока возвращаем успех для тестирования
     return { success: true, message: `Плагин ${pluginName} прерван` };
   } catch (error) {
     console.error(`[Background] Ошибка прерывания плагина ${pluginName}:`, error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Переключает sidebar напрямую из background script
+ */
+async function toggleSidebarDirectly(tabId: number): Promise<void> {
+  try {
+    console.log(`[Background] Переключение sidebar напрямую для вкладки ${tabId}`);
+    
+    // Проверяем текущее состояние sidebar
+    const sidePanelInfo = await chrome.sidePanel.getOptions({ tabId });
+    console.log('[Background] Текущее состояние sidebar:', sidePanelInfo);
+    
+    if (sidePanelInfo.enabled) {
+      // Если sidebar включен, пытаемся его открыть
+      try {
+        await chrome.sidePanel.open({ tabId: tabId });
+        console.log('[Background] Sidebar открыт успешно');
+      } catch (openError) {
+        console.log('[Background] Не удалось открыть sidebar:', openError.message);
+        // Если не удалось открыть, отключаем его
+        await chrome.sidePanel.setOptions({
+          tabId: tabId,
+          enabled: false
+        });
+        console.log('[Background] Sidebar отключен');
+      }
+    } else {
+      // Если sidebar отключен, включаем его
+      const tab = await chrome.tabs.get(tabId);
+      const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(tab.url || '')}`;
+      
+      await chrome.sidePanel.setOptions({
+        tabId: tabId,
+        path: sidebarUrl,
+        enabled: true
+      });
+      console.log('[Background] Sidebar включен с URL:', sidebarUrl);
+      
+      // Пытаемся открыть sidebar
+      try {
+        await chrome.sidePanel.open({ tabId: tabId });
+        console.log('[Background] Sidebar открыт успешно');
+      } catch (openError) {
+        console.log('[Background] Не удалось открыть sidebar автоматически:', openError.message);
+        console.log('[Background] Пользователь может открыть sidebar вручную через меню браузера');
+      }
+    }
+  } catch (error) {
+    console.error('[Background] Ошибка переключения sidebar:', error);
   }
 }
 
@@ -438,10 +673,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_PLUGINS') {
     (async () => {
       try {
+        console.log('[Background] Запрос плагинов для URL:', request.url);
         const plugins = await getPluginsList(request.url);
+        console.log('[Background] Найдено плагинов:', plugins.length, plugins);
         sendResponse({ success: true, plugins });
       } catch (error) {
         console.error('[Background] Ошибка получения списка плагинов:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Обработка сообщений управления состоянием от sidebar
+  if (['UPDATE_INPUT', 'SEND_MESSAGE', 'CLEAR_CHAT', 'GET_STATE', 'RUN_PLUGIN', 'INTERRUPT_PLUGIN'].includes(request.type)) {
+    (async () => {
+      try {
+        const result = await handleSidebarMessage(request, sender);
+        sendResponse(result || { success: true });
+      } catch (error) {
+        console.error('[Background] Ошибка обработки сообщения sidebar:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Обработка запроса на получение текущего tabId
+  if (request.type === 'GET_CURRENT_TAB_ID') {
+    (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        sendResponse({ success: true, tabId: tab.id });
+      } catch (error) {
+        console.error('[Background] Ошибка получения tabId:', error);
         sendResponse({ success: false, error: error.message });
       }
     })();
@@ -561,13 +826,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 //  4. СОЗДАНИЕ КОНТЕКСТНОГО МЕНЮ
 //================================================================//
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   // Создаем контекстное меню
   chrome.contextMenus.create({
     id: 'open-platform',
     title: 'Открыть панель управления APP',
     contexts: ['action']
   });
+
+  // Настраиваем поведение sidebar
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    console.log('[Background] Sidebar поведение настроено: клик по иконке будет открывать sidebar');
+  } catch (error) {
+    console.error('[Background] Ошибка настройки поведения sidebar:', error);
+  }
 });
 
 //================================================================//
@@ -575,11 +848,14 @@ chrome.runtime.onInstalled.addListener(() => {
 //================================================================//
 
 chrome.action.onClicked.addListener(async (tab) => {
+  console.log('[Background] Клик по иконке расширения для вкладки:', tab.id, tab.url);
+  
   // Переключаем sidebar для текущей вкладки
   if (tab.id) {
     try {
       // Создаем URL с параметрами вкладки
       const sidebarUrl = `sidepanel.html?tabId=${tab.id}&url=${encodeURIComponent(tab.url || '')}`;
+      console.log('[Background] Создан URL sidebar:', sidebarUrl);
       
       // Устанавливаем опции sidebar для вкладки
       await chrome.sidePanel.setOptions({
@@ -590,38 +866,75 @@ chrome.action.onClicked.addListener(async (tab) => {
       
       console.log('[Background] Sidebar настроен для вкладки', tab.id);
       
-      // Отправляем сообщение в content script для открытия sidebar
+      // Пытаемся открыть sidebar напрямую
       try {
-        await chrome.tabs.sendMessage(tab.id, {
-          type: 'TOGGLE_SIDEBAR'
-        });
-      } catch (contentError) {
-        console.log('[Background] Content script недоступен, используем fallback');
-        // Fallback: просто устанавливаем опции, пользователь может открыть sidebar вручную
+        await chrome.sidePanel.open({ tabId: tab.id });
+        console.log('[Background] Sidebar открыт успешно');
+      } catch (openError) {
+        console.log('[Background] Не удалось открыть sidebar:', openError.message);
+        console.log('[Background] Пользователь может открыть sidebar вручную через меню браузера');
       }
       
     } catch (error) {
       console.log('[Background] Ошибка настройки sidebar:', error);
     }
+  } else {
+    console.log('[Background] Tab ID не найден');
   }
 });
 
 //================================================================//
-//  6. ОБРАБОТЧИК КОНТЕКСТНОГО МЕНЮ
+//  6. ОБРАБОТЧИК СМЕНЫ ВКЛАДОК
+//================================================================//
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  console.log('[Background] Активирована вкладка:', activeInfo.tabId);
+  try {
+    // Получаем информацию о вкладке
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    if (tab.url) {
+      // Обновляем состояние вкладки с новым URL
+      const state = getOrCreateTabState(activeInfo.tabId, tab.url);
+      await sendStateToSidePanel(activeInfo.tabId);
+    }
+  } catch (error) {
+    console.error('[Background] Ошибка обработки смены вкладки:', error);
+  }
+});
+
+//================================================================//
+//  6.1. ОБРАБОТЧИК ИЗМЕНЕНИЯ URL ВКЛАДКИ
+//================================================================//
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.url && tab.url) {
+    console.log('[Background] Изменен URL вкладки:', tabId, 'новый URL:', changeInfo.url);
+    try {
+      // Обновляем состояние вкладки с новым URL
+      const state = getOrCreateTabState(tabId, changeInfo.url);
+      await sendStateToSidePanel(tabId);
+    } catch (error) {
+      console.error('[Background] Ошибка обработки изменения URL:', error);
+    }
+  }
+});
+
+//================================================================//
+//  7. ОБРАБОТЧИК КОНТЕКСТНОГО МЕНЮ
 //================================================================//
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'open-platform') {
-    const platformPageUrl = chrome.runtime.getURL('index.html');
-    chrome.tabs.query({ url: platformPageUrl }, (tabs) => {
-      if (tabs.length > 0) {
-        chrome.tabs.update(tabs[0].id!, { active: true });
-        if (tabs[0].windowId) {
+  const platformPageUrl = chrome.runtime.getURL('index.html');
+  chrome.tabs.query({ url: platformPageUrl }, (tabs) => {
+    if (tabs.length > 0) {
+      chrome.tabs.update(tabs[0].id!, { active: true });
+      if (tabs[0].windowId) {
           chrome.windows.update(tabs[0].windowId, { focused: true });
-        }
-      } else {
-        chrome.tabs.create({ url: platformPageUrl });
       }
-    });
+    } else {
+      chrome.tabs.create({ url: platformPageUrl });
+    }
+  });
   }
 });

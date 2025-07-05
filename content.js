@@ -16,8 +16,18 @@ class ContentScriptManager {
 
     async getCurrentTabId() {
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            this.currentTabId = tab.id;
+            // Content script не имеет прямого доступа к chrome.tabs.query
+            // Получаем tabId через background script
+            const response = await chrome.runtime.sendMessage({
+                type: 'GET_CURRENT_TAB_ID'
+            });
+            
+            if (response && response.tabId) {
+                this.currentTabId = response.tabId;
+                console.log('Content Script: Получен tabId:', this.currentTabId);
+            } else {
+                console.warn('Content Script: Не удалось получить tabId');
+            }
         } catch (error) {
             console.error('Content Script: Ошибка получения tabId:', error);
         }
@@ -45,6 +55,7 @@ class ContentScriptManager {
                     break;
                     
                 case 'TOGGLE_SIDEBAR':
+                    console.log('Content Script: Получен запрос на переключение sidebar');
                     this.toggleSidebar();
                     break;
             }
@@ -197,18 +208,26 @@ class ContentScriptManager {
         return {
             title: document.title,
             content: document.body.innerText,
-            html: document.documentElement.outerHTML
+            html: document.documentElement.outerHTML,
+            url: window.location.href
         };
+    }
+
+    // Метод для получения HTML страницы для плагинов
+    getPageHtml() {
+        return document.documentElement.outerHTML;
     }
 
     // Метод для переключения sidebar
     async toggleSidebar() {
         try {
+            console.log('Content Script: Отправляем запрос на переключение sidebar, tabId:', this.currentTabId);
             // Отправляем сообщение в background script для переключения sidebar
             await chrome.runtime.sendMessage({
                 type: 'TOGGLE_SIDEBAR_REQUEST',
                 tabId: this.currentTabId
             });
+            console.log('Content Script: Запрос отправлен успешно');
         } catch (error) {
             console.error('Content Script: Ошибка переключения sidebar:', error);
         }
