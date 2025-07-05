@@ -25,6 +25,7 @@ class SidebarChat {
         const sendBtn = document.getElementById('send-btn');
         const chatInput = document.getElementById('chat-input');
         const clearChatBtn = document.getElementById('clear-chat-btn');
+        const settingsBtn = document.getElementById('settings-btn');
 
         sendBtn.addEventListener('click', () => this.sendMessage());
         
@@ -41,6 +42,9 @@ class SidebarChat {
         });
 
         clearChatBtn.addEventListener('click', () => this.clearChat());
+        
+        // Кнопка настроек
+        settingsBtn.addEventListener('click', () => this.openSettings());
     }
 
     async loadCurrentTab() {
@@ -415,6 +419,12 @@ class SidebarChat {
         if (btn) {
             btn.classList.remove('running');
         }
+    }
+
+    openSettings() {
+        // Открываем страницу управления платформой
+        const platformUrl = chrome.runtime.getURL('index.html');
+        chrome.tabs.create({ url: platformUrl });
     }
 }
 

@@ -27,6 +27,16 @@ body {
     border-bottom: 1px solid #4a4a50;
 }
 
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.header-left {
+    flex: 1;
+}
+
 .sidebar-header h1 {
     font-size: 1.5em;
     color: #0099ff;
@@ -37,6 +47,24 @@ body {
     font-size: 0.9em;
     color: #888;
     word-break: break-all;
+}
+
+.settings-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.settings-btn:hover {
+    color: #0099ff;
+    background-color: #4a4a50;
 }
 
 /* Plugins Panel */

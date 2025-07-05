@@ -495,19 +495,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 //================================================================//
-//  4. ОБРАБОТЧИК КЛИКА ПО ИКОНКЕ РАСШИРЕНИЯ
+//  4. СОЗДАНИЕ КОНТЕКСТНОГО МЕНЮ
 //================================================================//
 
-chrome.action.onClicked.addListener((tab) => {
-  const platformPageUrl = chrome.runtime.getURL('index.html');
-  chrome.tabs.query({ url: platformPageUrl }, (tabs) => {
-    if (tabs.length > 0) {
-      chrome.tabs.update(tabs[0].id!, { active: true });
-      if (tabs[0].windowId) {
-          chrome.windows.update(tabs[0].windowId, { focused: true });
-      }
-    } else {
-      chrome.tabs.create({ url: platformPageUrl });
-    }
+chrome.runtime.onInstalled.addListener(() => {
+  // Создаем контекстное меню
+  chrome.contextMenus.create({
+    id: 'open-platform',
+    title: 'Открыть панель управления APP',
+    contexts: ['action']
   });
+});
+
+//================================================================//
+//  5. ОБРАБОТЧИК КЛИКА ПО ИКОНКЕ РАСШИРЕНИЯ
+//================================================================//
+
+chrome.action.onClicked.addListener(async (tab) => {
+  // Переключаем sidebar для текущей вкладки
+  if (tab.id) {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id });
+    } catch (error) {
+      console.log('[Background] Sidebar уже открыт или недоступен, переключаем...');
+      // Для переключения используем setOptions
+      await chrome.sidePanel.setOptions({
+        tabId: tab.id,
+        path: 'sidepanel.html',
+        enabled: true
+      });
+    }
+  }
+});
+
+//================================================================//
+//  6. ОБРАБОТЧИК КОНТЕКСТНОГО МЕНЮ
+//================================================================//
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'open-platform') {
+    const platformPageUrl = chrome.runtime.getURL('index.html');
+    chrome.tabs.query({ url: platformPageUrl }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.update(tabs[0].id!, { active: true });
+        if (tabs[0].windowId) {
+          chrome.windows.update(tabs[0].windowId, { focused: true });
+        }
+      } else {
+        chrome.tabs.create({ url: platformPageUrl });
+      }
+    });
+  }
 });
