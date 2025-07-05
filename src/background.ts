@@ -341,9 +341,9 @@ const hostApiImpl = {
 //================================================================//
 
 /**
- * Получает список доступных плагинов
+ * Получает список доступных плагинов для указанного URL
  */
-async function getPluginsList(): Promise<any[]> {
+async function getPluginsList(url?: string): Promise<any[]> {
   try {
     // Получаем список плагинов из папки public/plugins
     const plugins = [];
@@ -355,15 +355,40 @@ async function getPluginsList(): Promise<any[]> {
         name: 'ozon-analyzer',
         description: 'Анализатор товаров Ozon',
         version: '1.0.0',
-        auto: false
+        auto: false,
+        host_permissions: ['*://*.ozon.ru/*']
       },
       {
         name: 'test-plugin',
         description: 'Тестовый плагин для демонстрации',
         version: '1.0.0',
-        auto: false
+        auto: false,
+        host_permissions: ['<all_urls>']
+      },
+      {
+        name: 'google-helper',
+        description: 'Помощник для работы с Google сервисами',
+        version: '1.0.0',
+        auto: false,
+        host_permissions: ['*://*.google.com/*', '*://*.google.ru/*']
       }
     ];
+
+    // Фильтруем плагины по домену
+    if (url) {
+      const urlObj = new URL(url);
+      const hostname = urlObj.hostname;
+      
+      return knownPlugins.filter(plugin => {
+        return plugin.host_permissions.some(permission => {
+          if (permission === '<all_urls>') return true;
+          
+          // Простая проверка домена (можно улучшить)
+          const permissionPattern = permission.replace('*://*.', '').replace('/*', '');
+          return hostname.includes(permissionPattern);
+        });
+      });
+    }
 
     return knownPlugins;
   } catch (error) {
@@ -413,10 +438,48 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_PLUGINS') {
     (async () => {
       try {
-        const plugins = await getPluginsList();
+        const plugins = await getPluginsList(request.url);
         sendResponse({ success: true, plugins });
       } catch (error) {
         console.error('[Background] Ошибка получения списка плагинов:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Обработка запроса на переключение sidebar
+  if (request.type === 'TOGGLE_SIDEBAR_REQUEST') {
+    (async () => {
+      try {
+        const tabId = request.tabId;
+        if (tabId) {
+          // Проверяем, открыт ли sidebar
+          const sidePanelInfo = await chrome.sidePanel.getOptions({ tabId });
+          
+          if (sidePanelInfo.enabled) {
+            // Если sidebar включен, отключаем его
+            await chrome.sidePanel.setOptions({
+              tabId: tabId,
+              enabled: false
+            });
+            console.log('[Background] Sidebar отключен для вкладки', tabId);
+          } else {
+            // Если sidebar отключен, включаем его
+            const tab = await chrome.tabs.get(tabId);
+            const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(tab.url || '')}`;
+            
+            await chrome.sidePanel.setOptions({
+              tabId: tabId,
+              path: sidebarUrl,
+              enabled: true
+            });
+            console.log('[Background] Sidebar включен для вкладки', tabId);
+          }
+        }
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Background] Ошибка переключения sidebar:', error);
         sendResponse({ success: false, error: error.message });
       }
     })();
@@ -515,15 +578,30 @@ chrome.action.onClicked.addListener(async (tab) => {
   // Переключаем sidebar для текущей вкладки
   if (tab.id) {
     try {
-      await chrome.sidePanel.open({ tabId: tab.id });
-    } catch (error) {
-      console.log('[Background] Sidebar уже открыт или недоступен, переключаем...');
-      // Для переключения используем setOptions
+      // Создаем URL с параметрами вкладки
+      const sidebarUrl = `sidepanel.html?tabId=${tab.id}&url=${encodeURIComponent(tab.url || '')}`;
+      
+      // Устанавливаем опции sidebar для вкладки
       await chrome.sidePanel.setOptions({
         tabId: tab.id,
-        path: 'sidepanel.html',
+        path: sidebarUrl,
         enabled: true
       });
+      
+      console.log('[Background] Sidebar настроен для вкладки', tab.id);
+      
+      // Отправляем сообщение в content script для открытия sidebar
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'TOGGLE_SIDEBAR'
+        });
+      } catch (contentError) {
+        console.log('[Background] Content script недоступен, используем fallback');
+        // Fallback: просто устанавливаем опции, пользователь может открыть sidebar вручную
+      }
+      
+    } catch (error) {
+      console.log('[Background] Ошибка настройки sidebar:', error);
     }
   }
 });

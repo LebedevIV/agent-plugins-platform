@@ -9,7 +9,8 @@
     "activeTab",
     "storage",
     "sidePanel",
-    "contextMenus"
+    "contextMenus",
+    "tabs"
   ],
 
   "host_permissions": [

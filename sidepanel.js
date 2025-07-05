@@ -18,6 +18,7 @@ class SidebarChat {
         await this.loadPlugins();
         await this.loadChatHistory();
         this.setupMessageListener();
+        this.setupTabListener();
     }
 
     async setupEventListeners() {
@@ -49,18 +50,37 @@ class SidebarChat {
 
     async loadCurrentTab() {
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            this.currentTabId = tab.id;
-            this.currentUrl = tab.url;
+            // Получаем информацию о текущей вкладке из URL параметров
+            const urlParams = new URLSearchParams(window.location.search);
+            const tabId = parseInt(urlParams.get('tabId'));
+            const url = urlParams.get('url');
             
-            // Обновляем информацию о странице
-            const pageInfo = document.querySelector('.page-info');
-            const url = new URL(tab.url);
-            pageInfo.textContent = `${url.hostname}${url.pathname}`;
-            
-            console.log('Sidebar: Загружена вкладка', { tabId: this.currentTabId, url: this.currentUrl });
+            if (tabId && url) {
+                this.currentTabId = tabId;
+                this.currentUrl = url;
+                
+                // Обновляем информацию о странице
+                const pageInfo = document.querySelector('.page-info');
+                const urlObj = new URL(url);
+                pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
+                
+                console.log('Sidebar: Загружена вкладка', { tabId: this.currentTabId, url: this.currentUrl });
+            } else {
+                // Fallback: получаем активную вкладку
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                this.currentTabId = tab.id;
+                this.currentUrl = tab.url;
+                
+                const pageInfo = document.querySelector('.page-info');
+                const urlObj = new URL(tab.url);
+                pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
+                
+                console.log('Sidebar: Fallback загрузка вкладки', { tabId: this.currentTabId, url: this.currentUrl });
+            }
         } catch (error) {
             console.error('Sidebar: Ошибка загрузки вкладки', error);
+            const pageInfo = document.querySelector('.page-info');
+            pageInfo.textContent = 'Ошибка загрузки страницы';
         }
     }
 
@@ -68,7 +88,8 @@ class SidebarChat {
         try {
             // Получаем список плагинов от background script
             const response = await chrome.runtime.sendMessage({
-                type: 'GET_PLUGINS'
+                type: 'GET_PLUGINS',
+                url: this.currentUrl
             });
 
             if (response.success) {
@@ -425,6 +446,47 @@ class SidebarChat {
         // Открываем страницу управления платформой
         const platformUrl = chrome.runtime.getURL('index.html');
         chrome.tabs.create({ url: platformUrl });
+    }
+
+    setupTabListener() {
+        // Слушаем изменения вкладок
+        chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+            if (tabId === this.currentTabId && changeInfo.url) {
+                this.currentUrl = changeInfo.url;
+                this.updatePageInfo();
+                this.loadPlugins();
+                this.loadChatHistory();
+            }
+        });
+
+        // Слушаем активацию вкладок
+        chrome.tabs.onActivated.addListener((activeInfo) => {
+            if (activeInfo.tabId === this.currentTabId) {
+                this.refreshTabInfo();
+            }
+        });
+    }
+
+    async refreshTabInfo() {
+        try {
+            const tab = await chrome.tabs.get(this.currentTabId);
+            if (tab.url !== this.currentUrl) {
+                this.currentUrl = tab.url;
+                this.updatePageInfo();
+                this.loadPlugins();
+                this.loadChatHistory();
+            }
+        } catch (error) {
+            console.error('Sidebar: Ошибка обновления информации о вкладке', error);
+        }
+    }
+
+    updatePageInfo() {
+        if (this.currentUrl) {
+            const pageInfo = document.querySelector('.page-info');
+            const urlObj = new URL(this.currentUrl);
+            pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
+        }
     }
 }
 

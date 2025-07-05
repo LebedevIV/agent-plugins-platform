@@ -4,12 +4,23 @@ console.log('APP Content Script Loaded - Sidebar Integration');
 class ContentScriptManager {
     constructor() {
         this.activePlugins = new Map();
+        this.currentTabId = null;
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.getCurrentTabId();
         this.setupMessageListener();
         this.setupSidebarIntegration();
+    }
+
+    async getCurrentTabId() {
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            this.currentTabId = tab.id;
+        } catch (error) {
+            console.error('Content Script: Ошибка получения tabId:', error);
+        }
     }
 
     setupMessageListener() {
@@ -31,6 +42,10 @@ class ContentScriptManager {
                     
                 case 'USER_TYPING':
                     this.handleUserTyping(message.text);
+                    break;
+                    
+                case 'TOGGLE_SIDEBAR':
+                    this.toggleSidebar();
                     break;
             }
         });
@@ -185,13 +200,29 @@ class ContentScriptManager {
             html: document.documentElement.outerHTML
         };
     }
+
+    // Метод для переключения sidebar
+    async toggleSidebar() {
+        try {
+            // Отправляем сообщение в background script для переключения sidebar
+            await chrome.runtime.sendMessage({
+                type: 'TOGGLE_SIDEBAR_REQUEST',
+                tabId: this.currentTabId
+            });
+        } catch (error) {
+            console.error('Content Script: Ошибка переключения sidebar:', error);
+        }
+    }
 }
 
 // Инициализация при загрузке страницы
+async function initContentScript() {
+    const manager = new ContentScriptManager();
+    await manager.init();
+}
+
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        new ContentScriptManager();
-    });
+    document.addEventListener('DOMContentLoaded', initContentScript);
 } else {
-    new ContentScriptManager();
+    initContentScript();
 } 
