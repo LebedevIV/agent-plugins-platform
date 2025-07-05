@@ -7,7 +7,7 @@
  * и управляя поведением иконки расширения.
  */
 
-console.log("APP Background Script Loaded (v0.9.0 - Resilient Fetch).");
+console.log("APP Background Script Loaded (v0.9.1 - Sidebar Chat System).");
 
 //================================================================//
 //  1. РЕАЛИЗАЦИЯ HOST API
@@ -337,11 +337,93 @@ const hostApiImpl = {
 };
 
 //================================================================//
-//  2. ГЛАВНЫЙ СЛУШАТЕЛЬ СООБЩЕНИЙ
+//  2. УТИЛИТЫ ДЛЯ SIDEBAR
+//================================================================//
+
+/**
+ * Получает список доступных плагинов
+ */
+async function getPluginsList(): Promise<any[]> {
+  try {
+    // Получаем список плагинов из папки public/plugins
+    const plugins = [];
+    
+    // Для простоты пока возвращаем статический список
+    // В будущем можно добавить динамическое сканирование папки
+    const knownPlugins = [
+      {
+        name: 'ozon-analyzer',
+        description: 'Анализатор товаров Ozon',
+        version: '1.0.0',
+        auto: false
+      },
+      {
+        name: 'test-plugin',
+        description: 'Тестовый плагин для демонстрации',
+        version: '1.0.0',
+        auto: false
+      }
+    ];
+
+    return knownPlugins;
+  } catch (error) {
+    console.error('[Background] Ошибка получения списка плагинов:', error);
+    return [];
+  }
+}
+
+/**
+ * Запускает плагин
+ */
+async function runPluginCommand(pluginName: string, tabId?: number): Promise<any> {
+  try {
+    console.log(`[Background] Запуск плагина ${pluginName} для вкладки ${tabId}`);
+    
+    // Здесь будет интеграция с существующей системой плагинов
+    // Пока возвращаем успех для тестирования
+    return { success: true, message: `Плагин ${pluginName} запущен` };
+  } catch (error) {
+    console.error(`[Background] Ошибка запуска плагина ${pluginName}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Прерывает выполнение плагина
+ */
+async function interruptPluginCommand(pluginName: string, sessionId?: string): Promise<any> {
+  try {
+    console.log(`[Background] Прерывание плагина ${pluginName}, сессия ${sessionId}`);
+    
+    // Здесь будет логика прерывания плагина
+    // Пока возвращаем успех для тестирования
+    return { success: true, message: `Плагин ${pluginName} прерван` };
+  } catch (error) {
+    console.error(`[Background] Ошибка прерывания плагина ${pluginName}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
+//================================================================//
+//  3. ГЛАВНЫЙ СЛУШАТЕЛЬ СООБЩЕНИЙ
 //================================================================//
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Ваш вариант `return;` правильнее для краткости. Я вернул его.
+  // Обработка сообщений от sidebar
+  if (request.type === 'GET_PLUGINS') {
+    (async () => {
+      try {
+        const plugins = await getPluginsList();
+        sendResponse({ success: true, plugins });
+      } catch (error) {
+        console.error('[Background] Ошибка получения списка плагинов:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Обработка сообщений от Host API
   if (request.source !== "app-host-api") return;
 
   const { command, data, targetTabId } = request;
@@ -390,6 +472,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       hostApiImpl.analyzeConnectionStats(data).then(sendResponse);
       return true;
 
+    case "run_plugin":
+      if (!data || !data.pluginName) {
+        sendResponse({ success: false, error: "Plugin name was not provided." });
+        return false;
+      }
+      runPluginCommand(data.pluginName, sender.tab?.id).then(sendResponse);
+      return true;
+
+    case "interrupt_plugin":
+      if (!data || !data.pluginName) {
+        sendResponse({ success: false, error: "Plugin name was not provided." });
+        return false;
+      }
+      interruptPluginCommand(data.pluginName, data.sessionId).then(sendResponse);
+      return true;
+
     default:
       sendResponse({ error: `Unknown command: ${command}` });
       return false;
@@ -397,7 +495,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 //================================================================//
-//  3. ОБРАБОТЧИК КЛИКА ПО ИКОНКЕ РАСШИРЕНИЯ
+//  4. ОБРАБОТЧИК КЛИКА ПО ИКОНКЕ РАСШИРЕНИЯ
 //================================================================//
 
 chrome.action.onClicked.addListener((tab) => {

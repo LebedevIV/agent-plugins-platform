@@ -8,18 +8,20 @@ body {
   }
   
   #app-container {
-    max-width: 960px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  
-  main {
-    flex-grow: 1;
-    display: flex; /* Чтобы дочерние flex-элементы работали */
-    min-height: 0; /* Исправление для вложенных flex-контейнеров */
-  }
+      max-width: 960px;
+      margin: 0 auto;
+      /* display: flex; */
+      /* flex-direction: column; */
+      /* height: 100vh; */
+    }
+    
+    main {
+      /* flex-grow: 1; */
+      /* display: flex; */ /* Чтобы дочерние flex-элементы работали */
+      /* min-height: 0; */ /* Исправление для вложенных flex-контейнеров */
+      /* Пустой селектор для совместимости */
+      display: block; /* Базовое свойство для избежания пустого правила */
+    }
   
   header {
     text-align: center;
@@ -39,31 +41,35 @@ body {
   
   /* --- Стили для вкладок --- */
   .tab-nav {
-    border-bottom: 1px solid #444;
-    margin-bottom: 20px;
-    display: flex;
-    gap: 10px;
-  }
-  
-  .tab-button {
-    padding: 10px 20px;
-    border: none;
-    background-color: transparent;
-    color: #ccc;
-    cursor: pointer;
-    font-size: 16px;
-    border-bottom: 3px solid transparent;
-    transition: all 0.2s ease-in-out;
-  }
+      /* border-bottom: 1px solid #444; */
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .tab-button {
+      padding: 10px 20px;
+      border: none;
+      background-color: transparent;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 16px;
+      /* border-bottom: 3px solid transparent; */
+      width: 100%;
+      text-align: left;
+      transition: all 0.2s ease-in-out;
+    }
   
   .tab-button:hover {
     background-color: #3a3a3e;
   }
   
   .tab-button.active {
-    color: #ffffff;
-    border-bottom-color: #007bff;
-  }
+      color: #ffffff;
+      /* border-bottom-color: #007bff; */
+      border-left: 3px solid var(--accent-color, #007bff);
+    }
   
   .tab-content {
     padding: 10px;
@@ -169,15 +175,19 @@ body {
   }
   
   #logs.tab-content {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-  }
-  
-  #chat-log {
-    flex-grow: 1;
-    overflow-y: auto;
-  }
+      /* flex-grow: 1; */
+      /* display: flex; */
+      /* flex-direction: column; */
+      /* Пустой селектор для совместимости */
+      display: block; /* Базовое свойство для избежания пустого правила */
+    }
+    
+    #chat-log {
+      /* flex-grow: 1; */
+      /* overflow-y: auto; */
+      /* Пустой селектор для совместимости */
+      display: block; /* Базовое свойство для избежания пустого правила */
+    }
 
   /* --- Стили для системы логирования --- */
   .log-run-container {
@@ -213,9 +223,15 @@ body {
   }
 
   .log-source-engine { color: #888; }
-  .log-source-host { color: #0099ff; }
-  .log-source-python { color: #ffdd57; }
-  .log-source-error { color: #ff3860; font-weight: bold; }
+.log-source-host { color: #0099ff; }
+.log-source-python { color: #ffdd57; }
+.log-source-pyodide { color: #ff6b6b; }
+.log-source-error { color: #ff3860; font-weight: bold; }
+
+/* Стили для разных типов сообщений */
+.log-type-success { color: #98c379; }
+.log-type-error { color: #ff3860; font-weight: bold; }
+.log-type-warning { color: #ffa726; }
 
   .log-content {
     white-space: pre-wrap;
@@ -269,4 +285,316 @@ body {
     white-space: pre-wrap;
     word-wrap: break-word;
     font-family: monospace;
+}
+
+/* --- IDE Layout --- */
+.ide-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr 1fr;
+  height: 100vh;
+  gap: 1rem;
+  padding: 1rem; /* Добавим общий паддинг для всего лейаута */
+  box-sizing: border-box; /* Чтобы паддинг не влиял на общую высоту */
+}
+
+.ide-sidebar-left,
+.ide-main-content,
+.ide-sidebar-right {
+  background-color: var(--bg-color-dark, #252526);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-y: auto; /* Добавляем прокрутку для всех колонок */
+}
+
+.ide-sidebar-left {
+    padding: 0; /* Убираем внутренний отступ, чтобы навигация прилегала к краям */
+}
+
+/* --- JSON Viewer Styles --- */
+.json-viewer-container {
+    background-color: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+}
+
+.json-viewer-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+}
+
+.json-viewer-search {
+    flex: 1;
+    background-color: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 5px 8px;
+    color: #e2e2e2;
+    font-size: 12px;
+}
+
+.json-viewer-search:focus {
+    outline: none;
+    border-color: #0099ff;
+}
+
+.json-viewer-controls button {
+    background-color: #3a3a40;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 5px 10px;
+    color: #e2e2e2;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.json-viewer-controls button:hover {
+    background-color: #4a4a50;
+}
+
+.json-viewer-content {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.json-viewer-node {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    padding: 2px 0;
+    position: relative;
+}
+
+.json-viewer-toggle {
+    cursor: pointer;
+    color: #0099ff;
+    font-weight: bold;
+    user-select: none;
+    min-width: 15px;
+    text-align: center;
+}
+
+.json-viewer-toggle:hover {
+    color: #00ccff;
+}
+
+.json-viewer-key {
+    color: #ffdd57;
+    font-weight: bold;
+}
+
+.json-viewer-value {
+    color: #e2e2e2;
+}
+
+.json-viewer-value.string {
+    color: #98c379;
+}
+
+.json-viewer-value.number {
+    color: #61afef;
+}
+
+.json-viewer-value.boolean {
+    color: #c678dd;
+}
+
+.json-viewer-value.undefined {
+    color: #888;
+    font-style: italic;
+}
+
+.json-viewer-value.null {
+    color: #888;
+    font-style: italic;
+}
+
+.json-viewer-children {
+    flex: 1;
+}
+
+.json-viewer-copy-button {
+    background-color: #3a3a40;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 6px;
+    color: #e2e2e2;
+    cursor: pointer;
+    font-size: 10px;
+    margin-left: 10px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.json-viewer-node:hover .json-viewer-copy-button {
+    opacity: 1;
+}
+
+.json-viewer-copy-button:hover {
+    background-color: #4a4a50;
+}
+
+/* --- Enhanced Result Controls --- */
+.log-result-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.log-result-mode-switch {
+    background-color: #3a3a40;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 4px 8px;
+    color: #e2e2e2;
+    cursor: pointer;
+    font-size: 11px;
+    transition: background-color 0.2s;
+}
+
+.log-result-mode-switch:hover {
+    background-color: #4a4a50;
+}
+
+.log-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* --- Стили для заголовка логов --- */
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.clear-log-button {
+    background-color: #3a3a40;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px 16px;
+    color: #e2e2e2;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.clear-log-button:hover {
+    background-color: #4a4a50;
+}
+
+.clear-log-button:active {
+    background-color: #2a2a30;
+}
+
+/* --- Toast Notifications --- */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.toast {
+    background-color: #2c2c30;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px 16px;
+    min-width: 300px;
+    max-width: 400px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transform: translateX(100%);
+    opacity: 0;
+    transition: all 0.3s ease-in-out;
+    pointer-events: auto;
+}
+
+.toast.toast-visible {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast.toast-hiding {
+    transform: translateX(100%);
+    opacity: 0;
+}
+
+.toast-content {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.toast-message {
+    flex: 1;
+    color: #e2e2e2;
+    font-size: 14px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    color: #e2e2e2;
+    background-color: #3a3a40;
+}
+
+/* Типы уведомлений */
+.toast-success {
+    border-left: 4px solid #98c379;
+}
+
+.toast-error {
+    border-left: 4px solid #ff3860;
+}
+
+.toast-warning {
+    border-left: 4px solid #ffa726;
+}
+
+.toast-info {
+    border-left: 4px solid #0099ff;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .toast-container {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+    }
+    
+    .toast {
+        min-width: auto;
+        max-width: none;
+    }
 }

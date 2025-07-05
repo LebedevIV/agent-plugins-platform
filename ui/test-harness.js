@@ -7,6 +7,7 @@ import { getAvailablePlugins } from '../core/plugin-manager.js';
 import { createPluginCard } from './PluginCard.js';
 import { hostApi } from '../core/host-api.js';
 import { runWorkflow } from '../core/workflow-engine.js';
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from './toast-notifications.js';
 
 // --- Глобальная переменная для хранения "активного" логгера ---
 // Движок будет устанавливать ее, а hostApi.sendMessageToChat - использовать.
@@ -14,6 +15,20 @@ window.activeWorkflowLogger = null;
 
 // --- Инициализация глобального Host-API ---
 window.hostApi = hostApi;
+
+// Инициализация кнопки очистки лога
+document.addEventListener('DOMContentLoaded', () => {
+    const clearLogBtn = document.getElementById('clear-log-btn');
+    if (clearLogBtn) {
+        clearLogBtn.addEventListener('click', () => {
+            const chatLog = document.getElementById('chat-log');
+            if (chatLog) {
+                chatLog.innerHTML = '';
+                console.log('Лог очищен');
+            }
+        });
+    }
+});
 
 // Переопределяем sendMessageToChat, чтобы он использовал активный логгер
 window.hostApi.sendMessageToChat = (message) => {
@@ -35,23 +50,45 @@ console.log('Тестовый стенд инициализирован (v0.6.0)
 // Централизованная функция для запуска плагина
 async function handlePluginRun(plugin) {
     const card = document.querySelector(`.plugin-card[data-plugin-id="${plugin.id}"]`);
-    if (!card || card.classList.contains('running')) return;
+    if (!card || card.classList.contains('running')) {
+        showWarningToast('Плагин уже запущен');
+        return;
+    }
+    
+    // Показываем уведомление о запуске
+    showInfoToast(`Запуск плагина: ${plugin.name}`);
     
     // UI-реакция на запуск
     card.classList.add('running');
     const icon = card.querySelector('.plugin-icon');
     const originalIconSrc = icon.src;
     icon.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" class="plugin-loader" viewBox="0 0 24 24" fill="none" stroke="%23007bff" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`;
+
+    // --- Обновляем правую колонку ---
+    const rightSidebar = document.querySelector('.ide-sidebar-right');
+    if (rightSidebar) {
+        rightSidebar.innerHTML = `
+          <h2>Детали плагина: ${plugin.name}</h2>
+          <p>Здесь будут отображаться настройки и элементы управления для плагина.</p>
+          <p>ID плагина: ${plugin.id}</p>
+          <p>Версия: ${plugin.version}</p>
+          <br>
+          <p><em>(Этот раздел находится в разработке)</em></p>
+        `;
+    }
     
     try {
         // Вызываем наш движок. Он сам создаст логгер и установит window.activeWorkflowLogger.
         await runWorkflow(plugin.id);
     } catch (error) {
         console.error(`--- КРИТИЧЕСКАЯ ОШИБКА при выполнении плагина ${plugin.name}:`, error);
+        showErrorToast(`Ошибка выполнения: ${error.message}`);
         if (window.activeWorkflowLogger) {
             window.activeWorkflowLogger.addMessage('ERROR', `Критическая ошибка: ${error.message}`);
         }
     } finally {
+        // Показываем уведомление об успешном завершении
+        showSuccessToast(`Плагин ${plugin.name} завершен`);
         // Возвращаем UI в исходное состояние
         card.classList.remove('running');
         icon.src = originalIconSrc;

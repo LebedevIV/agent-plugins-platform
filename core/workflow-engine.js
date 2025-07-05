@@ -8,9 +8,11 @@ import { runPythonTool } from '../bridge/mcp-bridge.js';
 import { createRunLogger } from '../ui/log-manager.js';
 
 export async function runWorkflow(pluginId) {
-  // --- ▼▼▼ ИСПРАВЛЕНИЕ ОПЕЧАТКИ ▼▼▼ ---
-  window.activeWorkflowLogger = createRunLogger(`Воркфлоу плагина: ${pluginId}`);
-  const logger = window.activeWorkflowLogger; // Используем правильное имя
+  // --- ▼▼▼ ИСПРАВЛЕНИЕ ПАРАМЕТРОВ ▼▼▼ ---
+  const runId = `workflow-${pluginId}-${Date.now()}`;
+  const title = `Воркфлоу плагина: ${pluginId}`;
+  window.activeWorkflowLogger = createRunLogger(runId, title);
+  const logger = window.activeWorkflowLogger;
   // --- ▲▲▲ КОНЕЦ ИСПРАВЛЕНИЯ ▲▲▲ ---
 
   logger.addMessage('ENGINE', `▶️ Запуск воркфлоу...`);
@@ -49,11 +51,20 @@ export async function runWorkflow(pluginId) {
     }
   }
 
-  // Отображаем финальный результат
-  const lastStep = workflow.steps[workflow.steps.length - 1];
-  if (lastStep && context.steps[lastStep.id]) {
-    const finalResult = context.steps[lastStep.id].output;
-    logger.renderResult(lastStep.id, finalResult);
+  // Отображаем финальный результат с обработкой ошибок
+  try {
+    const lastStep = workflow.steps[workflow.steps.length - 1];
+    if (lastStep && context.steps[lastStep.id]) {
+      const finalResult = context.steps[lastStep.id].output;
+      // Пытаемся отрендерить структурированный результат
+      logger.renderResult(lastStep.id, finalResult);
+    }
+  } catch (error) {
+    console.error('Ошибка при рендеринге результата:', error);
+    // В случае сбоя, показываем сырой результат как простое сообщение
+    const lastStep = workflow.steps[workflow.steps.length - 1];
+    const rawResult = context.steps[lastStep.id]?.output;
+    logger.addMessage('ENGINE', `Не удалось отобразить результат. Сырые данные: ${JSON.stringify(rawResult)}`, 'error');
   }
 
   logger.addMessage('ENGINE', `🏁 Воркфлоу успешно завершен.`);
