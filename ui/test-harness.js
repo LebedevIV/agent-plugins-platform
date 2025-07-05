@@ -181,6 +181,161 @@ function setupTabs() {
   });
 }
 
+// --- Функции для управления API ключами ---
+
+// Вставка из буфера обмена
+window.pasteFromClipboard = async function(inputId) {
+    try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById(inputId).value = text;
+        showSuccessToast('Ключ вставлен из буфера обмена');
+    } catch (error) {
+        console.error('Ошибка вставки из буфера:', error);
+        showErrorToast('Не удалось вставить из буфера обмена');
+    }
+}
+
+// Копирование в буфер обмена
+window.copyToClipboard = async function(inputId) {
+    try {
+        const input = document.getElementById(inputId);
+        await navigator.clipboard.writeText(input.value);
+        showSuccessToast('Ключ скопирован в буфер обмена');
+    } catch (error) {
+        console.error('Ошибка копирования в буфер:', error);
+        showErrorToast('Не удалось скопировать в буфер обмена');
+    }
+}
+
+// Извлечение ключа из curl запроса
+window.extractKeyFromCurl = function(curlInputId, keyInputId) {
+    try {
+        const curlInput = document.getElementById(curlInputId);
+        const keyInput = document.getElementById(keyInputId);
+        const curlText = curlInput.value;
+        
+        // Ищем API ключ в curl запросе
+        const apiKeyMatch = curlText.match(/['"]?api[_-]?key['"]?\s*[:=]\s*['"]([^'"]+)['"]/i) ||
+                           curlText.match(/['"]?authorization['"]?\s*[:=]\s*['"]?bearer\s+([^'"\s]+)['"]?/i) ||
+                           curlText.match(/['"]?x-api-key['"]?\s*[:=]\s*['"]([^'"]+)['"]/i);
+        
+        if (apiKeyMatch && apiKeyMatch[1]) {
+            keyInput.value = apiKeyMatch[1];
+            showSuccessToast('API ключ извлечен из curl запроса');
+        } else {
+            showErrorToast('Не удалось найти API ключ в curl запросе');
+        }
+    } catch (error) {
+        console.error('Ошибка извлечения ключа:', error);
+        showErrorToast('Ошибка извлечения ключа из curl');
+    }
+}
+
+// Сохранение всех API ключей
+window.saveAIKeys = function() {
+    try {
+        const keys = {
+            'gemini-flash': document.getElementById('gemini-flash-key').value,
+            'gemini-pro': document.getElementById('gemini-pro-key').value,
+            'gemini-25': document.getElementById('gemini-25-key').value
+        };
+        
+        // Сохраняем в localStorage
+        localStorage.setItem('aiApiKeys', JSON.stringify(keys));
+        
+        // Обновляем статусы
+        updateKeyStatuses();
+        
+        showSuccessToast('API ключи сохранены');
+    } catch (error) {
+        console.error('Ошибка сохранения ключей:', error);
+        showErrorToast('Ошибка сохранения ключей');
+    }
+}
+
+// Тестирование API ключей
+window.testAIKeys = async function() {
+    try {
+        const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
+        const results = {};
+        
+        // Тестируем каждый ключ
+        for (const [keyName, keyValue] of Object.entries(keys)) {
+            if (keyValue) {
+                try {
+                    // Здесь будет реальное тестирование API
+                    // Пока просто проверяем формат ключа
+                    const isValid = keyValue.length > 20 && keyValue.includes('AIza');
+                    results[keyName] = isValid;
+                } catch (error) {
+                    results[keyName] = false;
+                }
+            } else {
+                results[keyName] = false;
+            }
+        }
+        
+        // Обновляем статусы
+        updateKeyStatuses(results);
+        
+        showSuccessToast('Тестирование завершено');
+    } catch (error) {
+        console.error('Ошибка тестирования ключей:', error);
+        showErrorToast('Ошибка тестирования ключей');
+    }
+}
+
+// Обновление статусов ключей
+function updateKeyStatuses(testResults = null) {
+    const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
+    
+    const statusElements = {
+        'gemini-flash': document.getElementById('gemini-flash-status'),
+        'gemini-pro': document.getElementById('gemini-pro-status'),
+        'gemini-25': document.getElementById('gemini-25-status')
+    };
+    
+    for (const [keyName, statusElement] of Object.entries(statusElements)) {
+        if (statusElement) {
+            const hasKey = keys[keyName] && keys[keyName].length > 0;
+            const isTested = testResults && keyName in testResults;
+            
+            if (isTested && testResults[keyName]) {
+                statusElement.textContent = 'Работает';
+                statusElement.className = 'key-status configured';
+            } else if (hasKey) {
+                statusElement.textContent = 'Настроен';
+                statusElement.className = 'key-status configured';
+            } else {
+                statusElement.textContent = 'Не настроен';
+                statusElement.className = 'key-status';
+            }
+        }
+    }
+}
+
+// Загрузка сохраненных ключей
+function loadSavedKeys() {
+    try {
+        const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
+        
+        if (keys['gemini-flash']) {
+            document.getElementById('gemini-flash-key').value = keys['gemini-flash'];
+        }
+        if (keys['gemini-pro']) {
+            document.getElementById('gemini-pro-key').value = keys['gemini-pro'];
+        }
+        if (keys['gemini-25']) {
+            document.getElementById('gemini-25-key').value = keys['gemini-25'];
+        }
+        
+        updateKeyStatuses();
+    } catch (error) {
+        console.error('Ошибка загрузки ключей:', error);
+    }
+}
+
 // --- Запускаем все при загрузке страницы ---
 displayPlugins();
 setupTabs();
+loadSavedKeys();

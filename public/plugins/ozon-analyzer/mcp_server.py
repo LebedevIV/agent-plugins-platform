@@ -8,6 +8,14 @@ from bs4 import BeautifulSoup
 # Глобальная переменная для доступа к JavaScript API
 js = None
 
+# Конфигурация нейросетей
+AI_MODELS = {
+    "basic_analysis": "gemini-flash",
+    "detailed_comparison": "gemini-pro", 
+    "deep_analysis": "gemini-25",
+    "scraping_fallback": "gemini-flash"
+}
+
 async def main():
     """Основная функция MCP сервера для анализатора Ozon"""
     global js
@@ -41,6 +49,8 @@ async def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
     
     if method == 'analyze_product':
         return await analyze_ozon_product(params)
+    elif method == 'deep_analysis':
+        return await perform_deep_analysis(params.get('description', ''), params.get('composition', ''))
     elif method == 'ping':
         return {"result": "pong"}
     else:
@@ -82,21 +92,32 @@ async def analyze_ozon_product(params: Dict[str, Any]) -> Dict[str, Any]:
         description, composition = extract_description_and_composition(soup)
         
         # Анализируем соответствие описания и состава
-        analysis_result = analyze_composition_vs_description(description, composition)
+        analysis_result = await analyze_composition_vs_description(description, composition)
         
         # Ищем аналоги
         analogs = await find_similar_products(categories, composition)
         
-        return {
-            "result": {
-                "categories": categories,
-                "description": description,
-                "composition": composition,
-                "analysis": analysis_result,
-                "analogs": analogs,
-                "message": f"Анализ завершен. Оценка соответствия: {analysis_result['score']}/10"
-            }
+        # Проверяем, нужен ли глубокий анализ
+        deep_analysis_available = await check_deep_analysis_availability()
+        
+        result = {
+            "categories": categories,
+            "description": description,
+            "composition": composition,
+            "analysis": analysis_result,
+            "analogs": analogs,
+            "message": f"Анализ завершен. Оценка соответствия: {analysis_result['score']}/10"
         }
+        
+        # Если доступен глубокий анализ, предлагаем его
+        if deep_analysis_available and analysis_result['score'] < 7:
+            result["deep_analysis_offer"] = {
+                "available": True,
+                "message": "Хотите провести более глубокий анализ с помощью Gemini 2.5 Pro?",
+                "model": AI_MODELS["deep_analysis"]
+            }
+        
+        return {"result": result}
         
     except Exception as e:
         return {
@@ -150,8 +171,74 @@ def extract_description_and_composition(soup: BeautifulSoup) -> tuple:
     
     return description, composition
 
-def analyze_composition_vs_description(description: str, composition: str) -> Dict[str, Any]:
-    """Анализирует соответствие описания и состава с помощью простой логики"""
+async def get_ai_api_key(model_name: str) -> str:
+    """Получает API ключ для указанной нейросети"""
+    try:
+        # В реальной реализации здесь будет обращение к background script
+        # для получения сохраненных ключей
+        return "demo_key"  # Заглушка
+    except Exception as e:
+        print(f"Ошибка получения API ключа для {model_name}: {e}")
+        return ""
+
+async def call_ai_model(model_name: str, prompt: str) -> str:
+    """Вызывает указанную нейросеть с промптом"""
+    try:
+        api_key = await get_ai_api_key(model_name)
+        if not api_key:
+            return f"Ошибка: API ключ для {model_name} не настроен"
+        
+        # В реальной реализации здесь будет вызов API нейросети
+        # Пока возвращаем заглушку
+        return f"Ответ от {model_name}: {prompt[:50]}..."
+        
+    except Exception as e:
+        return f"Ошибка вызова {model_name}: {str(e)}"
+
+async def check_deep_analysis_availability() -> bool:
+    """Проверяет доступность глубокого анализа"""
+    try:
+        api_key = await get_ai_api_key(AI_MODELS["deep_analysis"])
+        return bool(api_key and api_key != "demo_key")
+    except Exception as e:
+        print(f"Ошибка проверки доступности глубокого анализа: {e}")
+        return False
+
+async def perform_deep_analysis(description: str, composition: str) -> Dict[str, Any]:
+    """Выполняет глубокий анализ с помощью Gemini 2.5 Pro"""
+    try:
+        prompt = f"""
+        Проведи глубокий анализ товара с медицинской и научной точки зрения.
+        
+        Описание: {description}
+        Состав: {composition}
+        
+        Проанализируй:
+        1. Научную обоснованность заявленных свойств
+        2. Потенциальные побочные эффекты и противопоказания
+        3. Взаимодействие с другими препаратами
+        4. Эффективность по сравнению с аналогами
+        5. Рекомендации по применению
+        6. Альтернативные варианты
+        
+        Верни детальный анализ в структурированном виде.
+        """
+        
+        result = await call_ai_model(AI_MODELS["deep_analysis"], prompt)
+        
+        return {
+            "deep_analysis": result,
+            "model_used": AI_MODELS["deep_analysis"],
+            "timestamp": asyncio.get_event_loop().time()
+        }
+        
+    except Exception as e:
+        return {
+            "error": f"Ошибка глубокого анализа: {str(e)}"
+        }
+
+async def analyze_composition_vs_description(description: str, composition: str) -> Dict[str, Any]:
+    """Анализирует соответствие описания и состава с помощью нейросетей"""
     
     if not description or not composition:
         return {
@@ -160,44 +247,71 @@ def analyze_composition_vs_description(description: str, composition: str) -> Di
             "details": []
         }
     
-    # Простая логика анализа (в реальном проекте здесь была бы нейросеть)
-    score = 5  # Базовая оценка
-    
-    details = []
-    
-    # Проверяем длину описания
-    if len(description) < 50:
-        score -= 2
-        details.append("Описание слишком короткое")
-    
-    # Проверяем наличие ключевых слов в составе
-    key_ingredients = ['вода', 'глицерин', 'масло', 'экстракт', 'витамин']
-    found_ingredients = []
-    
-    for ingredient in key_ingredients:
-        if ingredient.lower() in composition.lower():
-            found_ingredients.append(ingredient)
-    
-    if found_ingredients:
-        score += 1
-        details.append(f"Найдены полезные ингредиенты: {', '.join(found_ingredients)}")
-    else:
-        score -= 1
-        details.append("Не найдены полезные ингредиенты")
-    
-    # Проверяем соответствие описания составу
-    description_words = set(re.findall(r'\b\w+\b', description.lower()))
-    composition_words = set(re.findall(r'\b\w+\b', composition.lower()))
-    
-    common_words = description_words.intersection(composition_words)
-    if len(common_words) > 5:
-        score += 1
-        details.append("Описание и состав имеют общие ключевые слова")
-    else:
-        score -= 1
-        details.append("Описание и состав не соответствуют друг другу")
-    
-    # Ограничиваем оценку от 1 до 10
+    try:
+        # Базовый анализ с помощью Gemini Flash
+        basic_prompt = f"""
+        Проанализируй соответствие описания товара и его состава.
+        
+        Описание: {description}
+        Состав: {composition}
+        
+        Оцени по шкале от 1 до 10, где:
+        1 - полное несоответствие
+        10 - полное соответствие
+        
+        Верни JSON в формате:
+        {{
+            "score": число,
+            "reasoning": "объяснение оценки",
+            "details": ["деталь 1", "деталь 2"]
+        }}
+        """
+        
+        basic_result = await call_ai_model(AI_MODELS["basic_analysis"], basic_prompt)
+        
+        # Детальное сравнение с помощью Gemini Pro
+        detailed_prompt = f"""
+        Проведи детальный анализ соответствия описания и состава товара.
+        
+        Описание: {description}
+        Состав: {composition}
+        
+        Проанализируй:
+        1. Соответствие заявленных свойств составу
+        2. Качество и полезность ингредиентов
+        3. Потенциальные риски или преимущества
+        4. Рекомендации по использованию
+        
+        Верни структурированный анализ.
+        """
+        
+        detailed_result = await call_ai_model(AI_MODELS["detailed_comparison"], detailed_prompt)
+        
+        # Парсим результат базового анализа
+        try:
+            basic_data = json.loads(basic_result)
+            score = basic_data.get("score", 5)
+            reasoning = basic_data.get("reasoning", "Анализ не удался")
+            details = basic_data.get("details", [])
+        except:
+            score = 5
+            reasoning = "Ошибка парсинга результата анализа"
+            details = []
+        
+        return {
+            "score": score,
+            "reasoning": reasoning,
+            "details": details,
+            "detailed_analysis": detailed_result,
+            "ai_models_used": [AI_MODELS["basic_analysis"], AI_MODELS["detailed_comparison"]]
+        }
+        
+    except Exception as e:
+        return {
+            "score": 0,
+            "reasoning": f"Ошибка анализа: {str(e)}",
+            "details": []
+        }
     score = max(1, min(10, score))
     
     reasoning = f"Оценка {score}/10: "
