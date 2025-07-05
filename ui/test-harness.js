@@ -24,6 +24,9 @@ console.log('Тестовый стенд инициализирован (v0.6.0)
 
 // Функция для отображения информации о плагине
 function showPluginInfo(plugin) {
+    // Получаем текущее состояние плагина
+    const isEnabled = getPluginState(plugin.id);
+    
     // --- Обновляем правую колонку ---
     const rightSidebar = document.querySelector('.ide-sidebar-right');
     if (rightSidebar) {
@@ -40,9 +43,13 @@ function showPluginInfo(plugin) {
             </div>
             <div class="plugin-actions">
               <h3>Действия</h3>
-              <button class="run-plugin-btn" onclick="runPlugin('${plugin.id}')">
-                🚀 Запустить плагин
-              </button>
+              <div class="plugin-toggle">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="toggle-${plugin.id}" onchange="togglePlugin('${plugin.id}', this.checked)" ${isEnabled ? 'checked' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Включить плагин</span>
+              </div>
               <button class="view-manifest-btn" onclick="viewManifest('${plugin.id}')">
                 📋 Просмотреть манифест
               </button>
@@ -64,41 +71,46 @@ function showPluginInfo(plugin) {
     }
 }
 
-// Функция для запуска плагина (вызывается из правой панели)
-window.runPlugin = async function(pluginId) {
-    const plugin = await getPluginById(pluginId);
-    if (!plugin) {
-        showErrorToast('Плагин не найден');
-        return;
-    }
-    
-    const card = document.querySelector(`.plugin-card[data-plugin-id="${pluginId}"]`);
-    if (!card || card.classList.contains('running')) {
-        showWarningToast('Плагин уже запущен');
-        return;
-    }
-    
-    // Показываем уведомление о запуске
-    showInfoToast(`Запуск плагина: ${plugin.name}`);
-    
-    // UI-реакция на запуск
-    card.classList.add('running');
-    const icon = card.querySelector('.plugin-icon');
-    const originalIconSrc = icon.src;
-    icon.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" class="plugin-loader" viewBox="0 0 24 24" fill="none" stroke="%23007bff" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`;
-
+// Функция для переключения состояния плагина
+window.togglePlugin = async function(pluginId, enabled) {
     try {
-        // Вызываем наш движок
-        await runWorkflow(pluginId);
+        // Сохраняем состояние плагина в localStorage
+        const pluginStates = JSON.parse(localStorage.getItem('pluginStates') || '{}');
+        pluginStates[pluginId] = enabled;
+        localStorage.setItem('pluginStates', JSON.stringify(pluginStates));
+        
+        // Обновляем UI
+        const card = document.querySelector(`.plugin-card[data-plugin-id="${pluginId}"]`);
+        if (card) {
+            if (enabled) {
+                card.classList.remove('disabled');
+                showSuccessToast(`Плагин включен`);
+            } else {
+                card.classList.add('disabled');
+                showInfoToast(`Плагин отключен`);
+            }
+        }
+        
+        // Обновляем переключатель в правой панели
+        const toggle = document.getElementById(`toggle-${pluginId}`);
+        if (toggle) {
+            toggle.checked = enabled;
+        }
+        
     } catch (error) {
-        console.error(`--- КРИТИЧЕСКАЯ ОШИБКА при выполнении плагина ${plugin.name}:`, error);
-        showErrorToast(`Ошибка выполнения: ${error.message}`);
-    } finally {
-        // Показываем уведомление об успешном завершении
-        showSuccessToast(`Плагин ${plugin.name} завершен`);
-        // Возвращаем UI в исходное состояние
-        card.classList.remove('running');
-        icon.src = originalIconSrc;
+        console.error('Ошибка переключения плагина:', error);
+        showErrorToast(`Ошибка: ${error.message}`);
+    }
+}
+
+// Функция для получения состояния плагина
+function getPluginState(pluginId) {
+    try {
+        const pluginStates = JSON.parse(localStorage.getItem('pluginStates') || '{}');
+        return pluginStates[pluginId] || false;
+    } catch (error) {
+        console.error('Ошибка получения состояния плагина:', error);
+        return false;
     }
 }
 
@@ -136,6 +148,13 @@ async function displayPlugins() {
             const pluginCard = createPluginCard(plugin);
             // Добавляем атрибут, чтобы мы могли найти эту карточку
             pluginCard.dataset.pluginId = plugin.id;
+            
+            // Проверяем состояние плагина
+            const isEnabled = getPluginState(plugin.id);
+            if (!isEnabled) {
+                pluginCard.classList.add('disabled');
+            }
+            
             // Назначаем обработчик клика для показа информации о плагине
             pluginCard.onclick = () => showPluginInfo(plugin);
             pluginsListContainer.appendChild(pluginCard);

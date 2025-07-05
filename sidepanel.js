@@ -112,6 +112,17 @@ class SidebarChat {
             console.error('Sidebar: Ошибка загрузки плагинов', error);
         }
     }
+    
+    // Функция для получения состояния плагина
+    getPluginState(pluginName) {
+        try {
+            const pluginStates = JSON.parse(localStorage.getItem('pluginStates') || '{}');
+            return pluginStates[pluginName] || false;
+        } catch (error) {
+            console.error('Sidebar: Ошибка получения состояния плагина:', error);
+            return false;
+        }
+    }
 
     renderPlugins() {
         const container = document.getElementById('plugins-buttons');
@@ -119,6 +130,14 @@ class SidebarChat {
 
         this.plugins.forEach((plugin, name) => {
             const btn = this.createPluginButton(plugin);
+            
+            // Проверяем состояние плагина
+            const isEnabled = this.getPluginState(plugin.name);
+            if (!isEnabled) {
+                btn.classList.add('disabled');
+                btn.disabled = true;
+            }
+            
             container.appendChild(btn);
         });
     }
@@ -341,8 +360,7 @@ class SidebarChat {
             chatInput.value = '';
             this.state.currentInput = '';
             
-            // Добавляем сообщение в UI
-            this.addUserMessage(text);
+            // НЕ добавляем сообщение в UI здесь - оно будет добавлено через STATE_UPDATE
             
         } catch (error) {
             console.error('Sidebar: Ошибка отправки сообщения', error);
