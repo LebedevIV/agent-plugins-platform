@@ -1,9 +1,24 @@
+// import { pluginStateManager } from './core/index.js'; // УДАЛЯЕМ ИМПОРТ
+
+// --- КОД ИЗ core/plugin-state-manager.js БОЛЬШЕ НЕ НУЖЕН ---
+
 // Система боковой панели
 class SidebarChat {
     constructor() {
         this.currentTabId = null;
-        this.currentUrl = null;
+        this.currentUrl = null; // Единственный источник правды о контексте
         this.plugins = new Map();
+        this.allPluginStates = {}; // Кэш состояний плагинов
+
+        // Глобальное состояние (активные процессы)
+        this.globalState = { 
+            runningPlugins: new Set() 
+        };
+        
+        // Состояния чатов для каждого плагина
+        this.pluginChatStates = {}; 
+        this.activePluginName = null; // Какой чат сейчас активен
+
         this.state = {
             chatHistory: [],
             currentInput: '',
@@ -20,10 +35,11 @@ class SidebarChat {
     async init() {
         await this.setupEventListeners();
         await this.loadCurrentTab();
-        await this.loadPlugins();
-        await this.loadChatHistory();
+        // Загрузка плагинов и состояний теперь инициируется из loadCurrentTab
+        // после получения ответа от background
         this.setupMessageListener();
         this.setupTabListener();
+        this.setupStorageListener(); // ДОБАВЛЯЕМ СЛУШАТЕЛЯ ХРАНИЛИЩА
     }
 
     async setupEventListeners() {
@@ -32,6 +48,7 @@ class SidebarChat {
         const chatInput = document.getElementById('chat-input');
         const clearChatBtn = document.getElementById('clear-chat-btn');
         const settingsBtn = document.getElementById('settings-btn');
+        const contextCheckBtn = document.getElementById('context-check-btn');
 
         sendBtn.addEventListener('click', () => this.sendMessage());
         
@@ -50,42 +67,116 @@ class SidebarChat {
         clearChatBtn.addEventListener('click', () => this.clearChat());
         
         // Кнопка настроек
+        if(settingsBtn) {
         settingsBtn.addEventListener('click', () => this.openSettings());
+        }
+        contextCheckBtn.addEventListener('click', () => this.handleContextCheck());
+
+        // Используем делегирование событий для динамически создаваемых элементов
+        const pluginsButtons = document.getElementById('plugins-buttons');
+        pluginsButtons.addEventListener('click', this.handlePluginToggle.bind(this));
+        
+        // Слушаем клики по кнопкам и выпадающим меню
+        document.addEventListener('click', (e) => {
+            const pluginBtn = e.target.closest('.plugin-btn');
+            const dropdownBtn = e.target.closest('.plugin-dropdown-btn');
+            const dropdownItem = e.target.closest('.dropdown-item');
+
+            if (dropdownBtn) {
+                e.stopPropagation();
+                const container = dropdownBtn.closest('.plugin-button-container');
+                const dropdown = container.querySelector('.plugin-dropdown-menu');
+                this.togglePluginDropdown(container, dropdown);
+                return;
+            }
+
+            if (pluginBtn) {
+                this.handlePluginClick(this.plugins.get(pluginBtn.dataset.pluginName));
+                return;
+            }
+            
+            if (dropdownItem) {
+                 e.stopPropagation();
+                 const pluginName = dropdownItem.closest('.plugin-button-container').dataset.pluginName;
+                 const action = dropdownItem.dataset.action;
+                 this.handlePluginDropdownAction(action, this.plugins.get(pluginName));
+                 this.closeAllDropdowns();
+                 return;
+            }
+
+            // Закрываем все меню, если клик был вне их
+            if (!e.target.closest('.plugin-dropdown-menu')) {
+                this.closeAllDropdowns();
+            }
+        });
+    }
+
+    /**
+     * Устанавливает соединение с фоновым скриптом, используя механизм "рукопожатия".
+     * Посылает PING до тех пор, пока не получит PONG.
+     * @param {number} maxAttempts - Максимальное количество попыток.
+     * @param {number} interval - Интервал между попытками в мс.
+     * @returns {Promise<boolean>} - true, если соединение установлено, иначе false.
+     */
+    async establishConnection(maxAttempts = 10, interval = 100) {
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                const response = await chrome.runtime.sendMessage({ type: 'PING' });
+                if (response && response.pong) {
+                    console.log(`Боковая панель: Соединение с background установлено (попытка ${i + 1}).`);
+                    return true;
+                }
+            } catch (e) {
+                // Ошибки здесь ожидаемы, если background script еще не проснулся.
+            }
+            await new Promise(resolve => setTimeout(resolve, interval));
+        }
+        console.error("Боковая панель: Не удалось установить соединение с background script.");
+        return false;
     }
 
     async loadCurrentTab() {
         try {
-            // Получаем информацию о текущей вкладке из URL параметров
             const urlParams = new URLSearchParams(window.location.search);
             const tabId = parseInt(urlParams.get('tabId'));
             const url = urlParams.get('url');
-            
-            if (tabId && url) {
-                this.currentTabId = tabId;
-                this.currentUrl = url;
-                
-                // Обновляем информацию о странице
-                const pageInfo = document.querySelector('.page-info');
-                const urlObj = new URL(url);
-                pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
-                
-                console.log('Боковая панель: Загружена вкладка из URL параметров', { tabId: this.currentTabId, url: this.currentUrl });
-            } else {
-                // Fallback: получаем активную вкладку
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                this.currentTabId = tab.id;
-                this.currentUrl = tab.url;
-                
-                const pageInfo = document.querySelector('.page-info');
-                const urlObj = new URL(tab.url);
-                pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
-                
-                console.log('Боковая панель: Fallback загрузка вкладки', { tabId: this.currentTabId, url: this.currentUrl });
+
+            if (!tabId) {
+                throw new Error("Tab ID не найден в URL.");
             }
+
+            this.currentTabId = tabId;
+            this.currentUrl = url;
+            console.log('Боковая панель: Загружена вкладка из URL параметров', { tabId: this.currentTabId, url: this.currentUrl });
+
+            // ОЖИДАЕМ УСТАНОВКИ СОЕДИНЕНИЯ
+            const isConnected = await this.establishConnection();
+            if (!isConnected) {
+                const contextUrlDisplay = document.getElementById('context-url-display');
+                contextUrlDisplay.textContent = 'Ошибка: нет связи с фоновым скриптом.';
+                contextUrlDisplay.style.display = 'inline';
+                return; // Прерываем выполнение, если связи нет
+            }
+
+            // ЗАПРАШИВАЕМ СОСТОЯНИЕ У BACKGROUND SCRIPT
+            const response = await chrome.runtime.sendMessage({ type: 'GET_ALL_STATES', tabId: this.currentTabId });
+
+            if (response && response.success) {
+                console.log("Боковая панель: Получено состояние от background", response.states);
+                this.handleStateUpdate(response.states);
+                await this.loadPlugins(); 
+            } else {
+                console.error("Боковая панель: Не удалось получить состояние от background", response?.error);
+                const contextUrlDisplay = document.getElementById('context-url-display');
+                contextUrlDisplay.textContent = 'Ошибка: не удалось получить состояние.';
+                contextUrlDisplay.style.display = 'inline';
+            }
+
         } catch (error) {
             console.error('Боковая панель: Ошибка загрузки вкладки', error);
-            const pageInfo = document.querySelector('.page-info');
-            pageInfo.textContent = 'Ошибка загрузки страницы';
+            const contextUrlDisplay = document.getElementById('context-url-display');
+            contextUrlDisplay.textContent = `Ошибка: ${error.message}`;
+            contextUrlDisplay.style.display = 'inline';
         }
     }
 
@@ -112,37 +203,30 @@ class SidebarChat {
             console.error('Sidebar: Ошибка загрузки плагинов', error);
         }
     }
-    
-    // Функция для получения состояния плагина
-    getPluginState(pluginName) {
-        try {
-            const pluginStates = JSON.parse(localStorage.getItem('pluginStates') || '{}');
-            return pluginStates[pluginName] || false;
-        } catch (error) {
-            console.error('Sidebar: Ошибка получения состояния плагина:', error);
-            return false;
-        }
-    }
 
     renderPlugins() {
         const container = document.getElementById('plugins-buttons');
         container.innerHTML = '';
 
-        this.plugins.forEach((plugin, name) => {
+        if (!this.plugins || this.plugins.size === 0) {
+            container.innerHTML = '<p class="no-plugins-msg">Нет доступных плагинов для этой страницы.</p>';
+            return;
+        }
+
+        this.plugins.forEach((plugin) => {
             const btn = this.createPluginButton(plugin);
-            
-            // Проверяем состояние плагина
-            const isEnabled = this.getPluginState(plugin.name);
-            if (!isEnabled) {
-                btn.classList.add('disabled');
-                btn.disabled = true;
-            }
-            
             container.appendChild(btn);
         });
+        
+        this.updatePluginStates(this.allPluginStates);
+        this.switchChatView(this.activePluginName);
     }
 
     createPluginButton(plugin) {
+        const container = document.createElement('div');
+        container.className = 'plugin-button-container';
+        container.dataset.pluginName = plugin.name;
+
         const btn = document.createElement('button');
         btn.className = 'plugin-btn';
         btn.dataset.pluginName = plugin.name;
@@ -163,142 +247,120 @@ class SidebarChat {
         indicator.className = 'status-indicator';
         btn.appendChild(indicator);
 
-        // Обработчик клика
-        btn.addEventListener('click', () => this.handlePluginClick(plugin));
+        // Кнопка dropdown меню
+        const dropdownBtn = document.createElement('button');
+        dropdownBtn.className = 'plugin-dropdown-btn';
+        dropdownBtn.innerHTML = '&#9662;'; // Стрелка вниз
+        dropdownBtn.title = 'Настройки плагина';
+        
+        // Dropdown меню
+        const dropdown = document.createElement('div');
+        dropdown.className = 'plugin-dropdown-menu';
+        dropdown.innerHTML = `
+            <div class="dropdown-item" data-action="toggle-enabled">
+                <span class="dropdown-icon">🔌</span>
+                <span>Включить плагин</span>
+                <label class="switch">
+                    <input type="checkbox" class="enabled-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="dropdown-item" data-action="autorun">
+                <span class="dropdown-icon">🚀</span>
+                <span>Автозапуск</span>
+                <label class="switch">
+                    <input type="checkbox" class="autorun-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="dropdown-item" data-action="settings">
+                <span class="dropdown-icon">⚙️</span>
+                <span>Настройки</span>
+            </div>
+            <div class="dropdown-item" data-action="info">
+                <span class="dropdown-icon">ℹ️</span>
+                <span>Информация</span>
+            </div>
+        `;
 
-        return btn;
+        // Обработчики событий
+        btn.addEventListener('click', () => this.handlePluginClick(plugin));
+        
+        dropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.togglePluginDropdown(container, dropdown);
+        });
+
+        dropdown.addEventListener('click', (e) => e.stopPropagation());
+
+        container.appendChild(btn);
+        container.appendChild(dropdownBtn);
+        container.appendChild(dropdown);
+
+        return container;
     }
 
     async handlePluginClick(plugin) {
-        const btn = document.querySelector(`[data-plugin-name="${plugin.name}"]`);
+        if (!plugin) return;
         
-        // Проверяем, работает ли уже плагин
-        if (btn.classList.contains('running')) {
-            const shouldInterrupt = await this.showInterruptDialog(plugin.name);
-            if (shouldInterrupt) {
-                await this.interruptPlugin(plugin.name);
-            } else {
-                return;
-            }
-        }
-
-        // Запускаем плагин
-        await this.runPlugin(plugin.name);
-    }
-
-    async showInterruptDialog(pluginName) {
-        return new Promise((resolve) => {
-            const message = `Плагин "${pluginName}" уже работает. Прервать выполнение?`;
-            this.addSystemMessage(message);
-            
-            // Создаем кнопки да/нет
-            const buttonsContainer = document.createElement('div');
-            buttonsContainer.className = 'interrupt-buttons';
-            buttonsContainer.style.cssText = `
-                display: flex;
-                gap: 8px;
-                justify-content: center;
-                margin-top: 8px;
-            `;
-
-            const yesBtn = document.createElement('button');
-            yesBtn.textContent = 'Да';
-            yesBtn.style.cssText = `
-                padding: 4px 12px;
-                background: #ff3860;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            `;
-
-            const noBtn = document.createElement('button');
-            noBtn.textContent = 'Нет';
-            noBtn.style.cssText = `
-                padding: 4px 12px;
-                background: #4a4a50;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            `;
-
-            yesBtn.onclick = () => {
-                buttonsContainer.remove();
-                resolve(true);
-            };
-
-            noBtn.onclick = () => {
-                buttonsContainer.remove();
-                resolve(false);
-            };
-
-            buttonsContainer.appendChild(yesBtn);
-            buttonsContainer.appendChild(noBtn);
-
-            const lastMessage = document.querySelector('.message:last-child .message-content');
-            lastMessage.appendChild(buttonsContainer);
-        });
+        // Переключаем активный чат
+        this.switchChatView(plugin.name);
     }
 
     async runPlugin(pluginName) {
+        console.log(`Sidebar: Запуск плагина ${pluginName}`);
+        
+        this.globalState.runningPlugins.add(pluginName);
+        this.updatePluginStatuses();
+        
         try {
-            console.log('Sidebar: Запуск плагина:', pluginName, 'для вкладки:', this.currentTabId);
-            
-            const btn = document.querySelector(`[data-plugin-name="${pluginName}"]`);
-            btn.classList.add('running');
-
-            // Отправляем команду запуска плагина в background script
             const response = await chrome.runtime.sendMessage({
                 type: 'RUN_PLUGIN',
                 pluginName: pluginName,
                 tabId: this.currentTabId
             });
 
-            if (response.success) {
-                this.addSystemMessage(`Запущен плагин: ${pluginName}`);
+            if (response && response.success) {
+                this.addSystemMessage(`Плагин ${pluginName} успешно запущен.`);
             } else {
-                throw new Error(response.error || 'Неизвестная ошибка');
+                this.addSystemMessage(`Ошибка запуска плагина ${pluginName}: ${response.error}`);
+                this.globalState.runningPlugins.delete(pluginName);
+                this.updatePluginStatuses();
             }
         } catch (error) {
-            console.error('Sidebar: Ошибка запуска плагина', error);
-            this.addSystemMessage(`Ошибка запуска плагина ${pluginName}: ${error.message}`);
-            
-            // Убираем статус "running" при ошибке
-            const btn = document.querySelector(`[data-plugin-name="${pluginName}"]`);
-            if (btn) {
-                btn.classList.remove('running');
-            }
+            console.error(`Sidebar: Ошибка при отправке команды запуска плагина ${pluginName}`, error);
+            this.addSystemMessage(`Критическая ошибка при запуске плагина ${pluginName}.`);
+            this.globalState.runningPlugins.delete(pluginName);
+            this.updatePluginStatuses();
         }
     }
 
     async interruptPlugin(pluginName) {
+        console.log(`Sidebar: Прерывание плагина ${pluginName}`);
         try {
-            console.log('Sidebar: Прерывание плагина:', pluginName, 'для вкладки:', this.currentTabId);
-            
-            // Отправляем команду прерывания плагина в background script
             const response = await chrome.runtime.sendMessage({
                 type: 'INTERRUPT_PLUGIN',
-                pluginName: pluginName,
-                tabId: this.currentTabId
+                pluginName: pluginName
             });
-
-            if (response.success) {
-                const btn = document.querySelector(`[data-plugin-name="${pluginName}"]`);
-                btn.classList.remove('running');
-                this.addSystemMessage(`Плагин ${pluginName} прерван`);
+            if (response && response.success) {
+                this.addSystemMessage(`Плагин ${pluginName} прерван.`);
             } else {
-                throw new Error(response.error || 'Неизвестная ошибка');
+                this.addSystemMessage(`Ошибка прерывания плагина ${pluginName}: ${response.error}`);
             }
         } catch (error) {
-            console.error('Sidebar: Ошибка прерывания плагина', error);
-            this.addSystemMessage(`Ошибка прерывания плагина ${pluginName}: ${error.message}`);
+            console.error(`Sidebar: Ошибка при отправке команды прерывания плагина ${pluginName}`, error);
+            this.addSystemMessage(`Критическая ошибка при прерывании плагина ${pluginName}.`);
         }
+        // Состояние обновится через STATE_UPDATE от background
     }
 
     handleTyping(text) {
-        // Обновляем локальное состояние
-        this.state.currentInput = text;
+        if (!this.activePluginName) return;
+        // Сохраняем ввод для активного плагина
+        if (!this.pluginChatStates[this.activePluginName]) {
+            this.pluginChatStates[this.activePluginName] = { chatHistory: [], currentInput: '' };
+        }
+        this.pluginChatStates[this.activePluginName].currentInput = text;
         
         // Очищаем предыдущий таймаут
         if (this.typingTimeout) {
@@ -341,6 +403,7 @@ class SidebarChat {
     }
 
     async sendMessage() {
+        if (!this.activePluginName) return;
         const chatInput = document.getElementById('chat-input');
         const text = chatInput.value.trim();
         
@@ -358,7 +421,7 @@ class SidebarChat {
             
             // Очищаем поле ввода
             chatInput.value = '';
-            this.state.currentInput = '';
+            this.pluginChatStates[this.activePluginName].currentInput = '';
             
             // НЕ добавляем сообщение в UI здесь - оно будет добавлено через STATE_UPDATE
             
@@ -369,21 +432,39 @@ class SidebarChat {
     }
 
     addUserMessage(text) {
-        const message = this.createMessage('user', text);
-        document.getElementById('chat-messages').appendChild(message);
-        this.scrollToBottom();
+        // Добавляем сообщение в активный чат
+        if (!this.activePluginName) return;
+        
+        const activeChatState = this.pluginChatStates[this.activePluginName];
+        if (activeChatState) {
+            activeChatState.chatHistory.push({ type: 'user', content: text });
+            this.renderChatHistory();
+        }
     }
 
     addPluginMessage(pluginName, text) {
-        const message = this.createMessage('plugin', text, pluginName);
-        document.getElementById('chat-messages').appendChild(message);
-        this.scrollToBottom();
+        // Находим или создаем состояние чата для этого плагина
+        if (!this.pluginChatStates[pluginName]) {
+            this.pluginChatStates[pluginName] = { chatHistory: [], currentInput: '' };
+        }
+        const chatState = this.pluginChatStates[pluginName];
+        chatState.chatHistory.push({ type: 'plugin', content: text, pluginName: pluginName });
+
+        // Если это активный чат, перерисовываем
+        if (this.activePluginName === pluginName) {
+            this.renderChatHistory();
+        }
     }
 
     addSystemMessage(text) {
-        const message = this.createMessage('system', text);
-        document.getElementById('chat-messages').appendChild(message);
-        this.scrollToBottom();
+        // Системные сообщения добавляются в активный чат
+        if (!this.activePluginName) return;
+
+        const activeChatState = this.pluginChatStates[this.activePluginName];
+        if (activeChatState) {
+            activeChatState.chatHistory.push({ type: 'system', content: text });
+            this.renderChatHistory();
+        }
     }
 
     createMessage(type, text, pluginName = null) {
@@ -415,42 +496,35 @@ class SidebarChat {
     }
 
     async loadChatHistory() {
+        if (!this.currentTabId) return;
         try {
-            if (!this.currentTabId) return;
-            
-            // Получаем состояние от background script
             const response = await chrome.runtime.sendMessage({
-                type: 'GET_STATE',
+                type: 'GET_ALL_STATES', // Новый тип запроса
                 tabId: this.currentTabId
             });
 
-            if (response.success && response.state) {
-                this.state = {
-                    chatHistory: response.state.chatHistory || [],
-                    currentInput: response.state.currentInput || '',
-                    activePlugins: new Set(response.state.activePlugins || []),
-                    lastActivity: response.state.lastActivity || Date.now()
-                };
-                
-                // Обновляем UI
-                this.renderChatHistory();
-                this.updateInputValue();
-                this.updatePluginStatuses();
-                
-                console.log('Sidebar: Загружена история чата для вкладки', this.currentTabId);
+            if (response.success && response.states) {
+                this.pluginChatStates = response.states.pluginChatStates || {};
+                this.globalState.runningPlugins = new Set(response.states.runningPlugins || []);
+                this.activePluginName = response.states.activePluginName || this.plugins.keys().next().value;
+                console.log('Sidebar: Все состояния чатов загружены.');
             } else {
-                console.log('Sidebar: Нет сохраненной истории для вкладки', this.currentTabId);
+                 console.log('Sidebar: Нет сохраненных состояний для вкладки.');
+                 this.pluginChatStates = {};
             }
         } catch (error) {
-            console.error('Sidebar: Ошибка загрузки истории чата', error);
+            console.error('Sidebar: Ошибка загрузки состояний чатов', error);
         }
+        this.switchChatView(this.activePluginName);
     }
 
     renderChatHistory() {
         const messagesContainer = document.getElementById('chat-messages');
         messagesContainer.innerHTML = '';
         
-        this.state.chatHistory.forEach(msg => {
+        const activeChatHistory = this.pluginChatStates[this.activePluginName]?.chatHistory || [];
+        
+        activeChatHistory.forEach(msg => {
             const message = this.createMessage(msg.type, msg.content, msg.pluginName);
             messagesContainer.appendChild(message);
         });
@@ -461,7 +535,7 @@ class SidebarChat {
     updateInputValue() {
         const chatInput = document.getElementById('chat-input');
         if (chatInput) {
-            chatInput.value = this.state.currentInput;
+            chatInput.value = this.pluginChatStates[this.activePluginName]?.currentInput || '';
         }
     }
 
@@ -474,138 +548,287 @@ class SidebarChat {
         });
     }
 
-
-
     async clearChat() {
+        if (!this.activePluginName) return;
+
+        console.log(`[Sidebar] Очистка чата для ${this.activePluginName}`);
+        
+        // Очищаем локальное состояние
+        if (this.pluginChatStates[this.activePluginName]) {
+            this.pluginChatStates[this.activePluginName].chatHistory = [];
+        }
+        this.renderChatHistory();
+
+        // Отправляем запрос в background
         try {
-            if (!this.currentTabId) return;
-            
-            // Отправляем команду очистки в background script
             await chrome.runtime.sendMessage({
                 type: 'CLEAR_CHAT',
                 tabId: this.currentTabId
             });
-            
-            // Очищаем UI
-            const messages = document.getElementById('chat-messages');
-            messages.innerHTML = '';
-            
-            // Добавляем системное сообщение
-            this.addSystemMessage('История чата очищена');
-            
         } catch (error) {
-            console.error('Sidebar: Ошибка очистки чата', error);
+            console.error('Sidebar: Ошибка при очистке чата:', error);
         }
     }
 
     setupMessageListener() {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-            console.log('Sidebar: Получено сообщение:', message.type, 'для вкладки:', message.tabId, 'текущая вкладка:', this.currentTabId);
-            
-            // Обрабатываем обновления состояния от background script
-            if (message.type === 'STATE_UPDATE') {
-                // Проверяем, что сообщение для текущей вкладки
-                if (message.tabId === this.currentTabId) {
-                    console.log('Sidebar: Обновление состояния для текущей вкладки:', this.currentTabId);
-                    this.state = {
-                        chatHistory: message.state.chatHistory || [],
-                        currentInput: message.state.currentInput || '',
-                        activePlugins: new Set(message.state.activePlugins || []),
-                        lastActivity: message.state.lastActivity || Date.now()
-                    };
-                    
-                    // Обновляем UI
-                    this.renderChatHistory();
-                    this.updateInputValue();
-                    this.updatePluginStatuses();
-                } else {
-                    console.log('Sidebar: Сообщение для другой вкладки, игнорируем');
-                }
-                return;
-            }
-
-            // Обрабатываем сообщения от content script
-            if (sender.tab?.id !== this.currentTabId) return;
-
+            console.log("Sidebar: получено сообщение", message);
             switch (message.type) {
-                case 'PLUGIN_MESSAGE':
-                    this.addPluginMessage(message.pluginName, message.text);
+                case 'STATE_UPDATE':
+                    // Убеждаемся, что обновление для нашей вкладки
+                    if (message.tabId === this.currentTabId) {
+                        this.handleStateUpdate(message.states);
+                    }
                     break;
-                    
                 case 'PLUGIN_FINISHED':
                     this.handlePluginFinished(message.pluginName);
                     break;
-                    
-                case 'PLUGIN_ERROR':
-                    this.addSystemMessage(`Ошибка плагина ${message.pluginName}: ${message.error}`);
-                    this.handlePluginFinished(message.pluginName);
+                case 'TYPING_INDICATOR':
+                    if (message.isTyping) {
+                        this.showTypingIndicator();
+                    } else {
+                        this.hideTypingIndicator();
+                    }
                     break;
+                case 'ADD_PLUGIN_MESSAGE':
+                     this.addPluginMessage(message.pluginName, message.content);
+                     break;
             }
         });
+    }
+
+    handleStateUpdate(newState) {
+        this.currentUrl = newState.url;
+        this.globalState.runningPlugins = new Set(newState.globalState.runningPlugins);
+        this.pluginChatStates = newState.pluginChatStates;
+        this.activePluginName = newState.activePluginName;
+        
+        // Обновляем общий кэш состояний плагинов
+        if (newState.allPluginStates) {
+            this.allPluginStates = newState.allPluginStates;
+        }
+
+        this.updateUI();
+    }
+
+    updateUI() {
+        this.updateContextUrlDisplay();
+        this.updatePluginStates(this.allPluginStates);
+        this.updatePluginStatuses(); // Обновляет индикаторы запущенных плагинов
+        
+        // Переключаемся на активный чат или показываем заглушку
+        this.switchChatView(this.activePluginName);
+    }
+    
+    updateContextUrlDisplay() {
+        const contextUrlDisplay = document.getElementById('context-url-display');
+        if (this.currentUrl) {
+            contextUrlDisplay.textContent = this.currentUrl;
+            contextUrlDisplay.style.display = 'inline';
+        } else {
+            contextUrlDisplay.textContent = 'Контекст не определен';
+            contextUrlDisplay.style.display = 'inline';
+        }
     }
 
     handlePluginFinished(pluginName) {
-        const btn = document.querySelector(`[data-plugin-name="${pluginName}"]`);
-        if (btn) {
-            btn.classList.remove('running');
-        }
+        this.globalState.runningPlugins.delete(pluginName);
+        this.updatePluginStatuses();
     }
 
     openSettings() {
-        // Открываем страницу управления платформой
-        const platformUrl = chrome.runtime.getURL('index.html');
-        chrome.tabs.create({ url: platformUrl });
+        chrome.runtime.openOptionsPage();
     }
 
     setupTabListener() {
-        // Слушаем изменения вкладок
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             if (tabId === this.currentTabId && changeInfo.url) {
-                this.currentUrl = changeInfo.url;
-                this.updatePageInfo();
-                this.loadPlugins();
-                this.loadChatHistory();
-            }
-        });
-
-        // Слушаем активацию вкладок
-        chrome.tabs.onActivated.addListener((activeInfo) => {
-            console.log('Sidebar: Активирована вкладка:', activeInfo.tabId, 'текущая вкладка сайдбара:', this.currentTabId);
-            
-            // Если активирована другая вкладка, обновляем информацию
-            if (activeInfo.tabId !== this.currentTabId) {
-                console.log('Sidebar: Переключение на другую вкладку, обновляем состояние');
-                this.currentTabId = activeInfo.tabId;
-                this.refreshTabInfo();
-                this.loadChatHistory();
+                console.log('Sidebar: URL активной вкладки изменился', changeInfo.url);
+                this.updateContext(tab);
             }
         });
     }
 
-    async refreshTabInfo() {
-        try {
-            console.log('Sidebar: Обновление информации о вкладке:', this.currentTabId);
-            const tab = await chrome.tabs.get(this.currentTabId);
-            
-            // Всегда обновляем URL и информацию о странице
-            this.currentUrl = tab.url;
-            this.updatePageInfo();
-            
-            // Загружаем плагины для новой вкладки
-            await this.loadPlugins();
-            
-            console.log('Sidebar: Информация о вкладке обновлена:', { tabId: this.currentTabId, url: this.currentUrl });
-        } catch (error) {
-            console.error('Sidebar: Ошибка обновления информации о вкладке', error);
+    // НОВЫЙ СЛУШАТЕЛЬ ДЛЯ STORAGE
+    setupStorageListener() {
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'sync' && changes.pluginStates) {
+                console.log('Sidebar: Состояния плагинов изменились в storage, обновляем UI.', changes.pluginStates.newValue);
+                this.allPluginStates = changes.pluginStates.newValue;
+                this.updatePluginStates(this.allPluginStates);
+            }
+        });
+    }
+
+    async updateContext(tab) {
+        this.currentUrl = tab.url;
+        this.currentTabId = tab.id;
+        console.log("Sidebar: Обновление контекста для вкладки", tab);
+
+        this.updateContextUrlDisplay();
+        await this.loadPlugins();
+        await this.loadChatHistory();
+    }
+
+    togglePluginDropdown(container, dropdown) {
+        this.closeAllDropdowns(); // Закрываем все другие меню
+
+        dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    }
+
+    closeAllDropdowns() {
+        document.querySelectorAll('.plugin-dropdown-menu').forEach(menu => menu.style.display = 'none');
+    }
+
+    async handlePluginDropdownAction(action, plugin) {
+        if (!plugin) return;
+        const { name } = plugin;
+        let updates = {};
+
+        switch (action) {
+            case 'toggle-enabled':
+                updates = { enabled: !(this.allPluginStates[name]?.enabled ?? true) };
+                break;
+            case 'toggle-autorun':
+                updates = { autoRun: !(this.allPluginStates[name]?.autoRun ?? false) };
+                break;
+            case 'settings':
+                this.openPluginSettings(plugin);
+                return; // Не отправляем сообщение
+            case 'info':
+                this.showPluginInfo(plugin);
+                return; // Не отправляем сообщение
+            default:
+                return; // Неизвестное действие
+        }
+
+        const response = await chrome.runtime.sendMessage({
+            type: 'UPDATE_PLUGIN_STATE',
+            pluginId: name,
+            updates: updates
+        });
+        
+        if (!response.success) {
+            console.error("Sidebar: Не удалось обновить состояние плагина через меню", response.error);
         }
     }
 
-    updatePageInfo() {
-        if (this.currentUrl) {
-            const pageInfo = document.querySelector('.page-info');
-            const urlObj = new URL(this.currentUrl);
-            pageInfo.textContent = `${urlObj.hostname}${urlObj.pathname}`;
+    async openPluginSettings(plugin) {
+        // TODO: Реализовать логику открытия настроек конкретного плагина
+        alert(`Настройки для плагина ${plugin.name} еще не реализованы.`);
+    }
+
+    showPluginInfo(plugin) {
+        // TODO: Показать более детальную информацию о плагине
+        alert(`Плагин: ${plugin.name}\nВерсия: ${plugin.version}\nОписание: ${plugin.description}`);
+    }
+
+    updatePluginStates(states) {
+        if (!this.plugins) return;
+        this.plugins.forEach((plugin) => {
+            // Передаем либо сохраненное состояние, либо undefined,
+            // чтобы дочерняя функция сама определила дефолт.
+            this.updateSinglePluginState(plugin.name, states ? states[plugin.name] : undefined);
+        });
+    }
+
+    updateSinglePluginState(pluginName, state) {
+        const pluginContainer = document.querySelector(`.plugin-button-container[data-plugin-name="${pluginName}"]`);
+        if (!pluginContainer) return;
+
+        // Если состояние не определено, используем значения по умолчанию.
+        const { enabled = true, autoRun = false } = state || {};
+
+        const enabledToggle = pluginContainer.querySelector('.plugin-enabled-toggle');
+        const autoRunToggle = pluginContainer.querySelector('.plugin-autorun-toggle');
+        const pluginBtn = pluginContainer.querySelector('.plugin-btn');
+
+        if (enabledToggle) enabledToggle.checked = enabled;
+        if (autoRunToggle) autoRunToggle.checked = autoRun;
+
+        if (pluginBtn) {
+            pluginBtn.classList.toggle('disabled', !enabled);
+            pluginBtn.disabled = !enabled;
         }
+    }
+
+    async handleContextCheck() {
+        console.log("Текущий контекст Sidebar:");
+        console.log("Tab ID:", this.currentTabId);
+        console.log("URL:", this.currentUrl);
+        console.log("Активный плагин:", this.activePluginName);
+        console.log("Загруженные плагины:", this.plugins);
+        console.log("Все состояния плагинов:", this.allPluginStates);
+        console.log("Глобальное состояние (запущенные плагины):", this.globalState.runningPlugins);
+        
+        this.addSystemMessage("Проверка контекста завершена. Результаты в консоли разработчика.");
+        
+        // Повторно запросим состояние у background, чтобы убедиться в синхронизации
+        if (this.currentTabId) {
+            const response = await chrome.runtime.sendMessage({ type: 'GET_ALL_STATES', tabId: this.currentTabId });
+            console.log("Ответ на принудительный запрос GET_ALL_STATES:", response);
+            if(response?.success) {
+                 this.handleStateUpdate(response.states);
+            }
+        }
+    }
+    
+    // ПЕРЕРАБОТАННЫЙ ОБРАБОТЧИК
+    async handlePluginToggle(e) {
+        const checkbox = e.target;
+        if (checkbox.tagName === 'INPUT' && checkbox.type === 'checkbox') {
+            const pluginName = checkbox.dataset.pluginName;
+            const isEnabledToggle = checkbox.classList.contains('plugin-enabled-toggle');
+            const isAutoRunToggle = checkbox.classList.contains('plugin-autorun-toggle');
+    
+            if (pluginName && (isEnabledToggle || isAutoRunToggle)) {
+                const updates = {};
+                if (isEnabledToggle) {
+                    updates.enabled = checkbox.checked;
+                }
+                if (isAutoRunToggle) {
+                    updates.autoRun = checkbox.checked;
+                }
+    
+                // Отправляем команду в background
+                const response = await chrome.runtime.sendMessage({
+                    type: 'UPDATE_PLUGIN_STATE',
+                    pluginId: pluginName,
+                    updates: updates
+                });
+    
+                if (!response || !response.success) {
+                    console.error("Sidebar: Не удалось обновить состояние плагина", response?.error);
+                    // Откатываем чекбокс в предыдущее состояние, чтобы UI не врал
+                    checkbox.checked = !checkbox.checked;
+                }
+            }
+        }
+    }
+
+    switchChatView(pluginName) {
+        console.log('Переключение вида на плагин:', pluginName);
+        // Если имя плагина null, возможно, надо показать главный/пустой экран
+        if (!pluginName && this.plugins.size > 0) {
+            pluginName = this.plugins.keys().next().value; // Берем первый плагин по умолчанию
+        }
+
+        this.activePluginName = pluginName;
+        
+        // Обновляем заголовок чата
+        const chatHeader = document.querySelector('.chat-header h3');
+        if (chatHeader) {
+            chatHeader.textContent = this.activePluginName ? `Чат с "${this.activePluginName}"` : 'Чат с плагинами';
+        }
+
+        // Подсвечиваем активную кнопку
+        document.querySelectorAll('.plugin-button-container').forEach(c => {
+            c.classList.toggle('active-chat', c.dataset.pluginName === this.activePluginName);
+        });
+
+        // Рендерим историю и поле ввода для активного чата
+        this.renderChatHistory();
+        this.updateInputValue();
     }
 }
 

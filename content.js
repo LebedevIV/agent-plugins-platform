@@ -9,33 +9,20 @@ class ContentScriptManager {
     }
 
     async init() {
-        await this.getCurrentTabId();
+        // Убираем запрос tabId при инициализации
+        // await this.getCurrentTabId();
         this.setupMessageListener();
         this.setupSidebarIntegration();
-    }
-
-    async getCurrentTabId() {
-        try {
-            // Content script не имеет прямого доступа к chrome.tabs.query
-            // Получаем tabId через background script
-            const response = await chrome.runtime.sendMessage({
-                type: 'GET_CURRENT_TAB_ID'
-            });
-            
-            if (response && response.tabId) {
-                this.currentTabId = response.tabId;
-                console.log('Content Script: Получен tabId:', this.currentTabId);
-            } else {
-                console.warn('Content Script: Не удалось получить tabId');
-            }
-        } catch (error) {
-            console.error('Content Script: Ошибка получения tabId:', error);
-        }
     }
 
     setupMessageListener() {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.log('Content Script: Получено сообщение', message);
+
+            // Сохраняем tabId, если он пришел с сообщением
+            if (message.tabId) {
+                this.currentTabId = message.tabId;
+            }
 
             switch (message.type) {
                 case 'RUN_PLUGIN':

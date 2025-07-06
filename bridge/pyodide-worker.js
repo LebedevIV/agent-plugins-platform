@@ -14,7 +14,7 @@ async function initializePyodide() {
     self.postMessage({ type: 'pyodide_status', status: 'loading', message: 'Загрузка Python среды...' });
     
     try {
-        pyodide = await loadPyodide({ indexURL: '../pyodide/' });
+    pyodide = await loadPyodide({ indexURL: '../pyodide/' });
         
         // Уведомляем об успешной загрузке
         self.postMessage({ type: 'pyodide_status', status: 'ready', message: 'Python среда готова' });

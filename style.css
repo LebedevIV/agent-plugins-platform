@@ -236,10 +236,10 @@ body {
   }
 
   .log-source-engine { color: #888; }
-.log-source-host { color: #0099ff; }
-.log-source-python { color: #ffdd57; }
+  .log-source-host { color: #0099ff; }
+  .log-source-python { color: #ffdd57; }
 .log-source-pyodide { color: #ff6b6b; }
-.log-source-error { color: #ff3860; font-weight: bold; }
+  .log-source-error { color: #ff3860; font-weight: bold; }
 
 /* Стили для разных типов сообщений */
 .log-type-success { color: #98c379; }
@@ -384,7 +384,7 @@ body {
 }
 
 .json-viewer-toggle {
-    cursor: pointer;
+  cursor: pointer;
     color: #0099ff;
     font-weight: bold;
     user-select: none;

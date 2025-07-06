@@ -1,31 +1,109 @@
 /**
- * ui/test-harness.js
- * Главный скрипт для нашего UI (index.html).
+ * Test Harness UI
+ *
+ * Это интерфейс для ручного тестирования и отладки плагинов и Host-API.
  */
 
-import { getAvailablePlugins } from '../core/plugin-manager.js';
-import { createPluginCard } from './PluginCard.js';
-import { hostApi } from '../core/host-api.js';
-import { runWorkflow } from '../core/workflow-engine.js';
+// import { getAvailablePlugins } from '../core/plugin-manager.js';
+// import { runWorkflow } from '../core/workflow-engine.js';
+// import { hostApi } from '../core/host-api.js';
+// import { pluginStateManager } from '../core/index.js';
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from './toast-notifications.js';
+import { createPluginCard } from './PluginCard.js';
+import { LogManager } from './log-manager.js';
+import { JsonViewer } from './json-viewer.js';
+import { ToastNotifications } from './toast-notifications.js';
+
+// --- КОД ИЗ core/plugin-state-manager.js ---
+const pluginStateManager = {
+    async getAllStates() {
+        const { pluginStates = {} } = await chrome.storage.sync.get('pluginStates');
+        return pluginStates;
+    },
+    async getState(pluginId) {
+        const states = await this.getAllStates();
+        return states[pluginId] || { enabled: true, autoRun: false };
+    },
+    async setState(pluginId, state) {
+        const states = await this.getAllStates();
+        states[pluginId] = state;
+        await chrome.storage.sync.set({ pluginStates: states });
+    },
+    async updateState(pluginId, updates) {
+        const currentState = await this.getState(pluginId);
+        const newState = { ...currentState, ...updates };
+        await this.setState(pluginId, newState);
+    },
+    onStateChanged(callback) {
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'sync' && changes.pluginStates) {
+                callback(changes.pluginStates.newValue);
+            }
+        });
+    }
+};
+// --- КОНЕЦ КОДА ИЗ core/plugin-state-manager.js ---
+
+// Мы не можем импортировать getAvailablePlugins, поэтому создадим заглушку
+async function getAvailablePlugins() {
+    console.warn("Функция getAvailablePlugins является заглушкой. Используется статический список.");
+    return [
+      { name: 'ozon-analyzer', description: 'Анализатор товаров Ozon', version: '1.0.0', id: 'ozon-analyzer' },
+      { name: 'time-test', description: 'Тестовый плагин для проверки времени', version: '1.0.0', id: 'time-test' },
+      { name: 'google-helper', description: 'Помощник для Google', version: '1.0.0', id: 'google-helper' }
+    ];
+}
 
 // --- Инициализация глобального Host-API ---
-window.hostApi = hostApi;
+// window.hostApi = hostApi; // hostApi больше не импортируется
 
 // Переопределяем sendMessageToChat для работы с sidebar
-window.hostApi.sendMessageToChat = (message) => {
-    // Логи теперь отправляются в sidebar соответствующей вкладки
-    console.log("[Python Message] Сообщение для sidebar:", message.content);
-};
+// window.hostApi.sendMessageToChat = (message) => { ... };
 
 console.log('Тестовый стенд инициализирован (v0.6.0).');
+
+// --- Обработка URL параметров ---
+function handleUrlParameters() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const pluginName = urlParams.get('plugin');
+    const tab = urlParams.get('tab');
+    
+    if (pluginName && tab === 'settings') {
+        console.log('Открытие настроек плагина:', pluginName);
+        // Найдем плагин и покажем его информацию
+        setTimeout(async () => {
+            const plugins = await getAvailablePlugins();
+            const plugin = plugins.find(p => p.name === pluginName || p.id === pluginName);
+            if (plugin) {
+                showPluginInfo(plugin);
+                // Переключаемся на вкладку плагинов
+                const pluginsTab = document.querySelector('[data-tab="plugins"]');
+                if (pluginsTab) {
+                    pluginsTab.click();
+                }
+            } else {
+                console.error('Плагин не найден:', pluginName);
+            }
+        }, 100);
+    }
+}
 
 // --- Основная логика ---
 
 // Функция для отображения информации о плагине
-function showPluginInfo(plugin) {
-    // Получаем текущее состояние плагина
-    const isEnabled = getPluginState(plugin.id);
+async function showPluginInfo(plugin) {
+    const state = await pluginStateManager.getState(plugin.name);
+    
+    // Убираем выделение со всех карточек
+    document.querySelectorAll('.plugin-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    
+    // Выделяем карточку текущего плагина
+    const currentCard = document.querySelector(`[data-plugin-name="${plugin.name}"]`);
+    if (currentCard) {
+        currentCard.classList.add('selected');
+    }
     
     // --- Обновляем правую колонку ---
     const rightSidebar = document.querySelector('.ide-sidebar-right');
@@ -43,13 +121,25 @@ function showPluginInfo(plugin) {
             </div>
             <div class="plugin-actions">
               <h3>Действия</h3>
+              
               <div class="plugin-toggle">
                 <label class="toggle-switch">
-                  <input type="checkbox" id="toggle-${plugin.id}" onchange="togglePlugin('${plugin.id}', this.checked)" ${isEnabled ? 'checked' : ''}>
+                  <input type="checkbox" data-plugin-name="${plugin.name}" data-state-key="enabled" 
+                         onchange="handleToggleChange(this)" ${state.enabled ? 'checked' : ''}>
                   <span class="toggle-slider"></span>
                 </label>
                 <span class="toggle-label">Включить плагин</span>
               </div>
+
+              <div class="plugin-toggle">
+                <label class="toggle-switch">
+                  <input type="checkbox" data-plugin-name="${plugin.name}" data-state-key="autoRun"
+                         onchange="handleToggleChange(this)" ${state.autoRun ? 'checked' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Автоматическое срабатывание</span>
+              </div>
+
               <button class="view-manifest-btn" onclick="viewManifest('${plugin.id}')">
                 📋 Просмотреть манифест
               </button>
@@ -71,46 +161,28 @@ function showPluginInfo(plugin) {
     }
 }
 
-// Функция для переключения состояния плагина
-window.togglePlugin = async function(pluginId, enabled) {
+// Новый глобальный обработчик для всех переключателей
+window.handleToggleChange = async function(checkbox) {
+    const pluginName = checkbox.dataset.pluginName;
+    const stateKey = checkbox.dataset.stateKey; // 'enabled' или 'autoRun'
+    const value = checkbox.checked;
+
     try {
-        // Сохраняем состояние плагина в localStorage
-        const pluginStates = JSON.parse(localStorage.getItem('pluginStates') || '{}');
-        pluginStates[pluginId] = enabled;
-        localStorage.setItem('pluginStates', JSON.stringify(pluginStates));
+        const currentState = await pluginStateManager.getState(pluginName);
+        const newState = { ...currentState, [stateKey]: value };
+        await pluginStateManager.setState(pluginName, newState);
         
-        // Обновляем UI
-        const card = document.querySelector(`.plugin-card[data-plugin-id="${pluginId}"]`);
+        // Обновляем UI карточки, если меняли enabled
+        if (stateKey === 'enabled') {
+            const card = document.querySelector(`.plugin-card[data-plugin-name="${pluginName}"]`);
         if (card) {
-            if (enabled) {
-                card.classList.remove('disabled');
-                showSuccessToast(`Плагин включен`);
-            } else {
-                card.classList.add('disabled');
-                showInfoToast(`Плагин отключен`);
+                card.classList.toggle('disabled', !value);
             }
         }
-        
-        // Обновляем переключатель в правой панели
-        const toggle = document.getElementById(`toggle-${pluginId}`);
-        if (toggle) {
-            toggle.checked = enabled;
-        }
-        
+        showSuccessToast(`Настройка "${pluginName}" сохранена.`);
     } catch (error) {
-        console.error('Ошибка переключения плагина:', error);
-        showErrorToast(`Ошибка: ${error.message}`);
-    }
-}
-
-// Функция для получения состояния плагина
-function getPluginState(pluginId) {
-    try {
-        const pluginStates = JSON.parse(localStorage.getItem('pluginStates') || '{}');
-        return pluginStates[pluginId] || false;
-    } catch (error) {
-        console.error('Ошибка получения состояния плагина:', error);
-        return false;
+        showErrorToast(`Ошибка сохранения: ${error.message}`);
+        checkbox.checked = !value; // Возвращаем в исходное состояние
     }
 }
 
@@ -143,19 +215,18 @@ async function displayPlugins() {
     
     try {
         const plugins = await getAvailablePlugins();
+        const states = await pluginStateManager.getAllStates();
+
         pluginsListContainer.innerHTML = '';
         plugins.forEach(plugin => {
             const pluginCard = createPluginCard(plugin);
-            // Добавляем атрибут, чтобы мы могли найти эту карточку
-            pluginCard.dataset.pluginId = plugin.id;
+            pluginCard.dataset.pluginName = plugin.name;
             
-            // Проверяем состояние плагина
-            const isEnabled = getPluginState(plugin.id);
-            if (!isEnabled) {
+            const state = states[plugin.name] || { enabled: true };
+            if (!state.enabled) {
                 pluginCard.classList.add('disabled');
             }
             
-            // Назначаем обработчик клика для показа информации о плагине
             pluginCard.onclick = () => showPluginInfo(plugin);
             pluginsListContainer.appendChild(pluginCard);
         });
@@ -469,3 +540,4 @@ function loadCustomKeys(keys) {
 displayPlugins();
 setupTabs();
 loadSavedKeys();
+handleUrlParameters(); // Обрабатываем URL параметры

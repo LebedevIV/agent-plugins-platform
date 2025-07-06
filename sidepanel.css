@@ -35,6 +35,9 @@ body {
 
 .header-left {
     flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .sidebar-header h1 {
@@ -88,39 +91,152 @@ body {
     overflow-y: auto;
 }
 
-.plugin-btn {
-    width: 40px;
-    height: 40px;
-    border: 2px solid #4a4a50;
-    border-radius: 8px;
-    background-color: #3a3a40;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
+/* Контейнер кнопки плагина */
+.plugin-button-container {
     position: relative;
+    display: inline-block;
+    margin: 5px;
 }
 
-.plugin-btn:hover {
-    border-color: #0099ff;
+.plugin-button-container:hover {
     background-color: #4a4a50;
 }
 
-.plugin-btn.active {
-    border-color: #98c379;
-    background-color: #2a4a2a;
+.plugin-button-container.active-chat {
+    border: 1px solid #0099ff;
+    box-shadow: 0 0 5px rgba(0, 153, 255, 0.5);
+}
+
+.plugin-button-container.disabled {
+    opacity: 0.6;
+    background-color: #3a3a3a;
+}
+
+.plugin-button-container.disabled .plugin-btn {
+    cursor: not-allowed;
+}
+
+/* Кнопка dropdown */
+.plugin-dropdown-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
+}
+
+.plugin-button-container:hover .plugin-dropdown-btn {
+    opacity: 1;
+}
+
+.plugin-dropdown-btn:hover {
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.plugin-dropdown-btn:active {
+    background: rgba(0, 0, 0, 1);
+    transform: scale(0.95);
+}
+
+/* Dropdown меню */
+.plugin-dropdown-menu {
+    position: fixed;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    min-width: 150px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+}
+
+.plugin-dropdown-menu.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+/* Пункты dropdown меню */
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    border-bottom: 1px solid #444;
+    justify-content: space-between;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item:hover {
+    background: #3a3a3a;
+}
+
+.dropdown-icon {
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+/* Адаптация существующих стилей кнопок плагинов */
+.plugin-btn {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    border: none;
+    border-radius: 8px;
+    background: #2a2a2a;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    margin: 0;
+}
+
+.plugin-btn:hover {
+    background: #3a3a3a;
+    transform: translateY(-2px);
 }
 
 .plugin-btn.running {
-    border-color: #ffa726;
-    background-color: #4a2a2a;
-    animation: pulse 1.5s infinite;
+    background: #4CAF50;
+    animation: pulse 2s infinite;
 }
 
-.plugin-btn.auto {
-    border-color: #c678dd;
-    background-color: #2a2a4a;
+.plugin-btn.running:hover {
+    background: #45a049;
+}
+
+/* Анимация пульсации для работающих плагинов */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+    }
 }
 
 .plugin-btn img {
@@ -129,22 +245,14 @@ body {
     border-radius: 4px;
 }
 
-.plugin-btn .status-indicator {
-    position: absolute;
-    top: -2px;
-    right: -2px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #0099ff;
+.plugin-btn.active {
+    border-color: #98c379;
+    background-color: #2a4a2a;
 }
 
-.plugin-btn.running .status-indicator {
-    background-color: #ffa726;
-}
-
-.plugin-btn.auto .status-indicator {
-    background-color: #c678dd;
+.plugin-btn.auto {
+    border-color: #c678dd;
+    background-color: #2a2a4a;
 }
 
 .plugin-btn.disabled {
@@ -158,11 +266,6 @@ body {
 .plugin-btn.disabled:hover {
     border-color: #666;
     background-color: #2a2a2a;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
 }
 
 /* Chat Container */
@@ -389,4 +492,110 @@ body {
         width: 20px;
         height: 20px;
     }
+}
+
+.context-checker {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+#context-check-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0;
+    color: #888;
+    transition: color 0.3s ease;
+}
+
+#context-check-btn:hover {
+    color: #fff;
+}
+
+.context-url {
+    font-size: 0.75rem;
+    color: #ccc;
+    display: none;
+    word-break: break-all;
+    flex-basis: 100%;
+    padding-left: 36px;
+    margin-top: -5px;
+}
+
+#context-check-btn.mismatched {
+    color: red;
+}
+
+.context-url.mismatched {
+    color: white;
+}
+
+.settings-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.settings-btn:hover {
+    color: #0099ff;
+    background-color: #4a4a50;
+}
+
+/* Стили для переключателя в dropdown */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+}
+
+.slider.round {
+    border-radius: 20px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(14px);
 } 
