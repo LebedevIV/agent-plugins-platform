@@ -12,201 +12,181 @@ import { getOrCreateTabState, setTabState, getAllTabStates } from './modules/sta
 import { getPluginsList, runPluginCommand, interruptPluginCommand } from './modules/plugin-handler';
 import { hostApiImpl } from './modules/host-api-impl';
 import { getAllPluginStates, updatePluginState } from './modules/plugin-settings';
+import { initializeBackgroundScript, handleUIMessage, handleHostApiMessage } from './hooks/useBackgroundScript';
+import { logInfo, logError } from './utils/logging';
 
-console.log("APP Background Script Loaded (v0.9.1 - Система боковой панели).");
-
-//================================================================//
-//  ЛОГИКА УПРАВЛЕНИЯ НАСТРОЙКАМИ ПЛАГИНОВ
-//================================================================//
-
-// Вся логика (`getAllPluginStates`, `updatePluginState` и т.д.)
-// перенесена в `src/modules/plugin-settings.ts`
+console.log("APP Background Script Loaded (v0.9.2 - Умная сайдпанель с hooks-архитектурой).");
 
 //================================================================//
-//  3. ГЛАВНЫЙ СЛУШАТЕЛЬ СООБЩЕНИЙ (РЕФАКТОРИНГ)
+//  ИНИЦИАЛИЗАЦИЯ BACKGROUND SCRIPT
+//================================================================//
+
+// Инициализируем background script с hooks-архитектурой
+initializeBackgroundScript().catch(error => {
+    logError('Ошибка инициализации background script', error);
+});
+
+//================================================================//
+//  ГЛАВНЫЙ СЛУШАТЕЛЬ СООБЩЕНИЙ (HOOKS-АРХИТЕКТУРА)
 //================================================================//
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
-        const { type, tabId } = message;
+        try {
+            const { type, source } = message;
 
-        if (type === 'PING') {
-            sendResponse({ success: true, pong: true });
-            return;
-        }
-
-        // --- Сообщения от UI (сайдбар, страница настроек) ---
-        if (type === 'UPDATE_PLUGIN_STATE') {
-            if (message.pluginId && typeof message.updates !== 'undefined') {
-                try {
-                    await updatePluginState(message.pluginId, message.updates);
-                    sendResponse({ success: true });
-                } catch (e) {
-                    sendResponse({ success: false, error: (e as Error).message });
-                }
-            } else {
-                sendResponse({ success: false, error: "Missing pluginId or updates" });
-            }
-        } else if (type === 'GET_ALL_STATES') {
-            if (tabId) {
-                try {
-                    const state = await getOrCreateTabState(tabId);
-                    const allPluginStates = await getAllPluginStates();
-                    sendResponse({
-                        success: true,
-                        states: {
-                            ...state,
-                            globalState: { runningPlugins: Array.from(state.globalState.runningPlugins) },
-                            allPluginStates
-                        }
-                    });
-                } catch (e) {
-                    sendResponse({ success: false, error: (e as Error).message });
-                }
-            } else {
-                sendResponse({ success: false, error: "No tabId provided for GET_ALL_STATES" });
-            }
-        } else if (type === 'GET_PLUGINS') {
-            try {
-                const plugins = await getPluginsList(message.url);
-                sendResponse({ success: true, plugins });
-            } catch (e) {
-                sendResponse({ success: false, error: (e as Error).message });
-            }
-        } else if (type === 'SEND_MESSAGE' || type === 'UPDATE_INPUT' || type === 'CLEAR_CHAT') {
-            if (!tabId) {
-                sendResponse({ success: false, error: "No tabId provided" });
+            // Обработка PING сообщений
+            if (type === 'PING') {
+                sendResponse({ success: true, pong: true });
                 return;
             }
-            const state = await getOrCreateTabState(tabId);
-            const activePlugin = state.activePluginName;
-            
-            if (type === 'SEND_MESSAGE' && activePlugin) {
-                if (!state.pluginChatStates[activePlugin]) state.pluginChatStates[activePlugin] = { chatHistory: [], currentInput: '' };
-                state.pluginChatStates[activePlugin].chatHistory.push({ id: Date.now().toString(), type: 'user', content: message.content, timestamp: Date.now() });
-                state.pluginChatStates[activePlugin].currentInput = '';
-            } else if (type === 'UPDATE_INPUT' && activePlugin) {
-                if (state.pluginChatStates[activePlugin]) state.pluginChatStates[activePlugin].currentInput = message.input;
-            } else if (type === 'CLEAR_CHAT' && activePlugin) {
-                if (state.pluginChatStates[activePlugin]) state.pluginChatStates[activePlugin].chatHistory = [];
-            }
-            
-            state.lastActivity = Date.now();
-            await setTabState(tabId, state);
-            sendResponse({ success: true });
-        } else if (type === 'RUN_PLUGIN') {
-            if (tabId && message.pluginName) {
-                chrome.tabs.sendMessage(tabId, { type: 'RUN_PLUGIN', pluginName: message.pluginName, tabId: tabId });
-                const response = await runPluginCommand(message.pluginName, tabId);
-                sendResponse(response);
-            } else {
-                sendResponse({ success: false, error: "Missing tabId or pluginName" });
-            }
-        } else if (type === 'INTERRUPT_PLUGIN') {
-            if (message.pluginName) {
-                const response = await interruptPluginCommand(message.pluginName, getAllTabStates);
-                sendResponse(response);
-            } else {
-                sendResponse({ success: false, error: "Missing pluginName" });
-            }
-        } else if (type === 'PLUGIN_STATE_CHANGED') {
-            try {
-                await chrome.runtime.sendMessage({ type: 'PLUGIN_STATE_CHANGED', pluginId: message.pluginId, enabled: message.enabled });
-            } catch (error) {
-                // Ignore error
-            }
-            sendResponse({ success: true, delivered: "attempted" });
-        } else if (type === 'TOGGLE_SIDEBAR_REQUEST') {
-            if (tabId) await toggleSidebarDirectly(tabId);
-            sendResponse({ success: true });
-        } else if (type === 'GET_CURRENT_TAB_ID') {
-            if (sender.tab && sender.tab.id) {
-                sendResponse({ success: true, tabId: sender.tab.id });
-            } else {
-                try {
-                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                    sendResponse({ success: true, tabId: tab?.id });
-                } catch (e) {
-                    sendResponse({ success: false, error: (e as Error).message });
-                }
-            }
-        }
 
-        // --- Сообщения от Host-API (плагины) ---
-        else if (message.source === 'app-host-api') {
-            const { command, data, targetTabId } = message;
-            
-  switch (command) {
-    case "getActivePageContent":
-      if (!targetTabId) {
-        sendResponse({ error: "Target tab ID was not provided." });
-                        return;
-                    }
-                    const content = await hostApiImpl.getActivePageContent(targetTabId);
-                    sendResponse(content);
-                    break;
-    case "getElements":
-      if (!targetTabId) {
-        sendResponse({ error: "Target tab ID was not provided." });
-                        return;
-                    }
-                    const elements = await hostApiImpl.getElements(targetTabId, data);
-                    sendResponse(elements);
-                    break;
-      case "host_fetch":
-            try {
-                        const jsonData = await hostApiImpl.fetchWithRetry(data.url);
-                sendResponse({ error: false, data: jsonData });
-            } catch (err: any) {
-                sendResponse({ error: true, error_message: err.message });
+            // Обработка сообщений от UI через hooks
+            if (type && !source) {
+                const response = await handleUIMessage(message, sender);
+                sendResponse(response);
+                return;
             }
-                    break;
-    case "analyzeConnectionStats":
-      if (!data || !data.hostname) {
-        sendResponse({ error: "Hostname was not provided." });
-                        return;
-                    }
-                    const stats = await hostApiImpl.analyzeConnectionStats(data);
-                    sendResponse(stats);
-                    break;
-    case "run_plugin":
-      if (!data || !data.pluginName) {
-        sendResponse({ success: false, error: "Plugin name was not provided." });
-                         return;
-                     }
-                    const runResponse = await runPluginCommand(data.pluginName, sender.tab?.id);
-                    sendResponse(runResponse);
-                    break;
-    case "interrupt_plugin":
-      if (!data || !data.pluginName) {
-        sendResponse({ success: false, error: "Plugin name was not provided." });
-                        return;
-                    }
-                    const interruptResponse = await interruptPluginCommand(data.pluginName, getAllTabStates);
-                    sendResponse(interruptResponse);
-                    break;
-                default:
-                    sendResponse({ error: `Unknown host-api command: ${command}` });
-            }
-        }
 
-        // --- Специальные сообщения (тестирование и т.д.) ---
-        else if (type === '_TEST_OPEN_SIDE_PANEL' && sender.tab?.id) {
-            await toggleSidebarDirectly(sender.tab.id);
-            sendResponse({ success: true });
-        }
-        
-        // --- Неизвестные сообщения ---
-        else {
-            // Закомментировал, чтобы избежать спама в логах от других расширений
-            // console.warn(`[Background] Получено неизвестное сообщение:`, message);
-            // sendResponse({ success: false, error: 'Unknown message type' });
+            // Обработка сообщений от Host-API через hooks
+            if (source === 'app-host-api') {
+                const response = await handleHostApiMessage(message, sender);
+                sendResponse(response);
+                return;
+            }
+
+            // Обработка специальных сообщений (тестирование)
+            if (type === '_TEST_OPEN_SIDE_PANEL' && sender.tab?.id) {
+                await toggleSidebarDirectly(sender.tab.id);
+                sendResponse({ success: true });
+                return;
+            }
+
+            // Обработка legacy сообщений (для обратной совместимости)
+            const legacyResponse = await handleLegacyMessages(message, sender);
+            if (legacyResponse) {
+                sendResponse(legacyResponse);
+                return;
+            }
+
+            // Неизвестные сообщения
+            logError('Неизвестный тип сообщения', { type, source });
+            sendResponse({ success: false, error: 'Unknown message type' });
+
+        } catch (error) {
+            logError('Ошибка обработки сообщения', { message, error });
+            sendResponse({ success: false, error: (error as Error).message });
         }
     })();
-
-    // ВОЗВРАЩАЕМ TRUE, чтобы канал оставался открытым для асинхронного sendResponse
-    return true;
+    
+    return true; // Указываем, что ответ будет асинхронным
 });
+
+//================================================================//
+//  LEGACY ОБРАБОТЧИКИ (ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ)
+//================================================================//
+
+async function handleLegacyMessages(message: any, sender: any): Promise<any> {
+    const { type, tabId } = message;
+
+    // --- Сообщения от UI (сайдбар, страница настроек) ---
+    if (type === 'UPDATE_PLUGIN_STATE') {
+        if (message.pluginId && typeof message.updates !== 'undefined') {
+            try {
+                await updatePluginState(message.pluginId, message.updates);
+                return { success: true };
+            } catch (e) {
+                return { success: false, error: (e as Error).message };
+            }
+        } else {
+            return { success: false, error: "Missing pluginId or updates" };
+        }
+    } else if (type === 'GET_ALL_STATES') {
+        if (tabId) {
+            try {
+                const state = await getOrCreateTabState(tabId);
+                const allPluginStates = await getAllPluginStates();
+                return {
+                    success: true,
+                    states: {
+                        ...state,
+                        globalState: { runningPlugins: Array.from(state.globalState.runningPlugins) },
+                        allPluginStates
+                    }
+                };
+            } catch (e) {
+                return { success: false, error: (e as Error).message };
+            }
+        } else {
+            return { success: false, error: "No tabId provided for GET_ALL_STATES" };
+        }
+    } else if (type === 'GET_PLUGINS') {
+        try {
+            const plugins = await getPluginsList(message.url);
+            return { success: true, plugins };
+        } catch (e) {
+            return { success: false, error: (e as Error).message };
+        }
+    } else if (type === 'SEND_MESSAGE' || type === 'UPDATE_INPUT' || type === 'CLEAR_CHAT') {
+        if (!tabId) {
+            return { success: false, error: "No tabId provided" };
+        }
+        const state = await getOrCreateTabState(tabId);
+        const activePlugin = state.activePluginName;
+        
+        if (type === 'SEND_MESSAGE' && activePlugin) {
+            if (!state.pluginChatStates[activePlugin]) state.pluginChatStates[activePlugin] = { chatHistory: [], currentInput: '' };
+            state.pluginChatStates[activePlugin].chatHistory.push({ id: Date.now().toString(), type: 'user', content: message.content, timestamp: Date.now() });
+            state.pluginChatStates[activePlugin].currentInput = '';
+        } else if (type === 'UPDATE_INPUT' && activePlugin) {
+            if (state.pluginChatStates[activePlugin]) state.pluginChatStates[activePlugin].currentInput = message.input;
+        } else if (type === 'CLEAR_CHAT' && activePlugin) {
+            if (state.pluginChatStates[activePlugin]) state.pluginChatStates[activePlugin].chatHistory = [];
+        }
+        
+        state.lastActivity = Date.now();
+        await setTabState(tabId, state);
+        return { success: true };
+    } else if (type === 'RUN_PLUGIN') {
+        if (tabId && message.pluginName) {
+            chrome.tabs.sendMessage(tabId, { type: 'RUN_PLUGIN', pluginName: message.pluginName, tabId: tabId });
+            const response = await runPluginCommand(message.pluginName, tabId);
+            return response;
+        } else {
+            return { success: false, error: "Missing tabId or pluginName" };
+        }
+    } else if (type === 'INTERRUPT_PLUGIN') {
+        if (message.pluginName) {
+            const response = await interruptPluginCommand(message.pluginName, getAllTabStates);
+            return response;
+        } else {
+            return { success: false, error: "Missing pluginName" };
+        }
+    } else if (type === 'PLUGIN_STATE_CHANGED') {
+        try {
+            await chrome.runtime.sendMessage({ type: 'PLUGIN_STATE_CHANGED', pluginId: message.pluginId, enabled: message.enabled });
+        } catch (error) {
+            // Ignore error
+        }
+        return { success: true, delivered: "attempted" };
+    } else if (type === 'TOGGLE_SIDEBAR_REQUEST') {
+        if (tabId) await toggleSidebarDirectly(tabId);
+        return { success: true };
+    } else if (type === 'GET_CURRENT_TAB_ID') {
+        if (sender.tab && sender.tab.id) {
+            return { success: true, tabId: sender.tab.id };
+        } else {
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                return { success: true, tabId: tab?.id };
+            } catch (e) {
+                return { success: false, error: (e as Error).message };
+            }
+        }
+    }
+
+    return null; // Сообщение не обработано
+}
 
 //================================================================//
 //  4. СОЗДАНИЕ КОНТЕКСТНОГО МЕНЮ

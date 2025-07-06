@@ -16,12 +16,110 @@ export interface Plugin {
     id: string;
     enabled?: boolean;
     autoRun?: boolean;
+    manifest?: {
+        host_permissions?: string[];
+        [key: string]: any;
+    };
 }
 
 export interface PluginState {
     enabled: boolean;
     autoRun: boolean;
     [key: string]: any;
+}
+
+/**
+ * Извлечение домена из паттерна разрешения
+ */
+function extractDomainFromPermission(permission: string): string | null {
+    try {
+        // Паттерн "*://*.example.com/*" -> "example.com"
+        const match = permission.match(/\*:\/\/\*\.([^\/]+)\/\*/);
+        if (match) {
+            return match[1];
+        }
+        
+        // Паттерн "*://example.com/*" -> "example.com"
+        const match2 = permission.match(/\*:\/\/([^\/]+)\/\*/);
+        if (match2) {
+            return match2[1];
+        }
+        
+        return null;
+    } catch (error) {
+        logError('Ошибка извлечения домена из разрешения', { permission, error });
+        return null;
+    }
+}
+
+/**
+ * Получение списка совместимых сайтов из всех плагинов
+ */
+export function getCompatibleSites(): string[] {
+    try {
+        const sites = new Set<string>();
+        
+        // Здесь должна быть логика получения плагинов из background script
+        // Пока используем статический список на основе известных плагинов
+        const knownPlugins = [
+            {
+                manifest: {
+                    host_permissions: ["*://*.ozon.ru/*"]
+                }
+            },
+            {
+                manifest: {
+                    host_permissions: ["*://*.google.com/*", "*://*.google.ru/*"]
+                }
+            }
+        ];
+        
+        knownPlugins.forEach(plugin => {
+            if (plugin.manifest?.host_permissions) {
+                plugin.manifest.host_permissions.forEach(permission => {
+                    const domain = extractDomainFromPermission(permission);
+                    if (domain) {
+                        sites.add(domain);
+                    }
+                });
+            }
+        });
+        
+        const result = Array.from(sites);
+        logInfo('Получен список совместимых сайтов', { sites: result });
+        return result;
+    } catch (error) {
+        logError('Ошибка получения совместимых сайтов', error);
+        return [];
+    }
+}
+
+/**
+ * Проверка совместимости сайта с плагинами
+ */
+export function isSiteCompatible(url: string): boolean {
+    try {
+        if (!url) return false;
+        
+        const currentDomain = new URL(url).hostname;
+        const compatibleSites = getCompatibleSites();
+        
+        const isCompatible = compatibleSites.some(site => 
+            currentDomain.includes(site) || site.includes(currentDomain)
+        );
+        
+        logInfo('Проверка совместимости сайта', { 
+            url, 
+            currentDomain, 
+            compatibleSites, 
+            isCompatible 
+        });
+        
+        return isCompatible;
+    } catch (error) {
+        logError('Ошибка проверки совместимости сайта', { url, error });
+        return false;
+    }
 }
 
 /**

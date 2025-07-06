@@ -5,6 +5,9 @@
  * с Chrome API и предоставляет удобные обертки.
  */
 
+import { isSiteCompatible } from './usePluginManager';
+import { logInfo, logError } from '../utils/logging';
+
 /**
  * Получение активной вкладки
  */
@@ -93,4 +96,84 @@ export function isChromeApiAvailable(): boolean {
     return typeof chrome !== 'undefined' && 
            typeof chrome.tabs !== 'undefined' && 
            typeof chrome.runtime !== 'undefined';
+}
+
+/**
+ * Открытие сайдпанели только на совместимых сайтах
+ */
+export async function openSidebarIfCompatible(tabId: number, url: string): Promise<void> {
+    try {
+        if (isSiteCompatible(url)) {
+            await chrome.sidePanel.open({ tabId });
+            logInfo('Сайдпанель открыта для совместимого сайта', { tabId, url });
+        } else {
+            logInfo('Сайдпанель не открыта - сайт не совместим', { tabId, url });
+        }
+    } catch (error) {
+        logError('Ошибка открытия сайдпанели', { tabId, url, error });
+    }
+}
+
+/**
+ * Закрытие сайдпанели на несовместимых сайтах
+ */
+export async function closeSidebarIfIncompatible(tabId: number, url: string): Promise<void> {
+    try {
+        if (!isSiteCompatible(url)) {
+            // В Chrome Extensions API нет прямого метода close для sidePanel
+            // Вместо этого отключаем сайдпанель для этой вкладки
+            await chrome.sidePanel.setOptions({
+                tabId,
+                enabled: false
+            });
+            logInfo('Сайдпанель отключена - сайт не совместим', { tabId, url });
+        }
+    } catch (error) {
+        logError('Ошибка отключения сайдпанели', { tabId, url, error });
+    }
+}
+
+/**
+ * Управление сайдпанелью на основе совместимости сайта
+ */
+export async function manageSidebarForSite(tabId: number, url: string): Promise<void> {
+    try {
+        if (isSiteCompatible(url)) {
+            // На совместимых сайтах - включаем и открываем сайдпанель
+            await chrome.sidePanel.setOptions({
+                tabId,
+                enabled: true
+            });
+            await chrome.sidePanel.open({ tabId });
+            logInfo('Сайдпанель открыта для совместимого сайта', { tabId, url });
+        } else {
+            // На несовместимых сайтах - отключаем сайдпанель
+            await chrome.sidePanel.setOptions({
+                tabId,
+                enabled: false
+            });
+            logInfo('Сайдпанель отключена для несовместимого сайта', { tabId, url });
+        }
+    } catch (error) {
+        logError('Ошибка управления сайдпанелью', { tabId, url, error });
+    }
+}
+
+/**
+ * Настройка опций сайдпанели для вкладки
+ */
+export async function configureSidebarOptions(tabId: number, url: string): Promise<void> {
+    try {
+        const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(url || '')}`;
+        
+        await chrome.sidePanel.setOptions({
+            tabId,
+            path: sidebarUrl,
+            enabled: true
+        });
+        
+        logInfo('Опции сайдпанели настроены', { tabId, url: sidebarUrl });
+    } catch (error) {
+        logError('Ошибка настройки опций сайдпанели', { tabId, url, error });
+    }
 } 

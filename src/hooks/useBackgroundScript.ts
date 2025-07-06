@@ -5,9 +5,15 @@
  * Показывает, как организовать код с помощью hooks.
  */
 
-import { getActiveTab, getTabById, sendMessageToTab } from './useChromeApi';
+import { 
+    getActiveTab, 
+    getTabById, 
+    sendMessageToTab,
+    manageSidebarForSite,
+    configureSidebarOptions
+} from './useChromeApi';
 import { sendMessageWithResponse, ping, getTabStates } from './useMessageHandler';
-import { getAvailablePlugins, runPlugin, interruptPlugin } from './usePluginManager';
+import { getAvailablePlugins, runPlugin, interruptPlugin, isSiteCompatible } from './usePluginManager';
 import { isValidTabId, isValidPluginName, isProtectedUrl } from '../utils/validation';
 import { logInfo, logError, logWarn } from '../utils/logging';
 
@@ -24,9 +30,64 @@ export async function initializeBackgroundScript(): Promise<void> {
             logWarn('Background script не может связаться с runtime');
         }
         
+        // Настраиваем обработчики событий вкладок
+        setupTabEventHandlers();
+        
         logInfo('Background script инициализирован');
     } catch (error) {
         logError('Ошибка инициализации background script', error);
+    }
+}
+
+/**
+ * Настройка обработчиков событий вкладок
+ */
+function setupTabEventHandlers(): void {
+    try {
+        // Обработка обновления вкладки
+        chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+            if (changeInfo.status === 'complete' && tab.url) {
+                logInfo('Вкладка обновлена', { tabId, url: tab.url });
+                
+                // Настраиваем сайдпанель для вкладки
+                await configureSidebarForTab(tab);
+                
+                // Управляем видимостью сайдпанели на основе совместимости
+                await manageSidebarForSite(tabId, tab.url);
+            }
+        });
+
+        // Обработка активации вкладки
+        chrome.tabs.onActivated.addListener(async (activeInfo) => {
+            try {
+                const tab = await getTabById(activeInfo.tabId);
+                if (tab && tab.url) {
+                    logInfo('Вкладка активирована', { tabId: tab.id, url: tab.url });
+                    
+                    // Управляем видимостью сайдпанели при переключении вкладок
+                    await manageSidebarForSite(activeInfo.tabId, tab.url);
+                }
+            } catch (error) {
+                logError('Ошибка обработки активации вкладки', { tabId: activeInfo.tabId, error });
+            }
+        });
+
+        // Обработка создания новой вкладки
+        chrome.tabs.onCreated.addListener(async (tab) => {
+            if (tab.url) {
+                logInfo('Новая вкладка создана', { tabId: tab.id, url: tab.url });
+                
+                // Настраиваем сайдпанель для новой вкладки
+                await configureSidebarForTab(tab);
+                
+                // Управляем видимостью сайдпанели
+                await manageSidebarForSite(tab.id!, tab.url);
+            }
+        });
+
+        logInfo('Обработчики событий вкладок настроены');
+    } catch (error) {
+        logError('Ошибка настройки обработчиков событий вкладок', error);
     }
 }
 
@@ -151,13 +212,9 @@ export async function configureSidebarForTab(tab: chrome.tabs.Tab): Promise<void
             });
             logInfo('Sidebar отключен для защищенной вкладки', { tabId: tab.id, url: tab.url });
         } else {
-            const sidebarUrl = `sidepanel.html?tabId=${tab.id}&url=${encodeURIComponent(tab.url || '')}`;
-            await chrome.sidePanel.setOptions({
-                tabId: tab.id,
-                path: sidebarUrl,
-                enabled: true
-            });
-            logInfo('Sidebar настроен для вкладки', { tabId: tab.id, url: sidebarUrl });
+            // Настраиваем опции сайдпанели
+            await configureSidebarOptions(tab.id, tab.url || '');
+            logInfo('Sidebar настроен для вкладки', { tabId: tab.id, url: tab.url });
         }
     } catch (error) {
         logError('Ошибка настройки sidebar для вкладки', { tabId: tab.id, error });
