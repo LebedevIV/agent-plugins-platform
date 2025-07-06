@@ -4,17 +4,26 @@
 
 ### ✅ Завершенные Функции
 
-#### 1. Hooks Архитектура (НОВОЕ)
+#### 1. Полная Hooks-архитектура (НОВОЕ - v0.9.3)
 - **Проблема**: Монолитный background script был сложен для поддержки и тестирования
-- **Решение**: Рефакторинг в модульную hooks-архитектуру для лучшей организации кода
+- **Решение**: Глубокий рефакторинг в полную hooks-архитектуру для лучшей организации кода
 - **Реализация**: 
-  - `useChromeApi.ts` - Централизованное управление Chrome API
-  - `useMessageHandler.ts` - Обработка сообщений между компонентами
-  - `usePluginManager.ts` - Управление жизненным циклом плагинов
-  - `useBackgroundScript.ts` - Основная логика background script
-  - `utils/validation.ts` - Валидация данных
-  - `utils/logging.ts` - Централизованное логирование
-- **Преимущества**: Лучшая читаемость, тестируемость, безопасность и модульность
+  - `src/hooks/useStateManager.ts` - Централизованное управление состоянием вкладок, чатов и плагинов
+  - `src/hooks/usePluginHandler.ts` - Специализированная обработка команд плагинов
+  - `src/hooks/useSidebarController.ts` - Управление сайдпанелью и её поведением
+  - `src/hooks/useChromeApi.ts` - Централизованное управление Chrome API
+  - `src/hooks/useMessageHandler.ts` - Обработка сообщений между компонентами
+  - `src/hooks/usePluginManager.ts` - Управление жизненным циклом плагинов
+  - `src/hooks/useBackgroundScript.ts` - Координация всех hooks и основная логика
+  - `src/hooks/index.ts` - Централизованный экспорт всех hooks
+  - `src/hooks/README.md` - Полная документация hooks-архитектуры
+  - `REFACTORING_SUMMARY.md` - Подробный обзор проведенного рефакторинга
+- **Преимущества**: Лучшая читаемость, тестируемость, безопасность, модульность и переиспользование
+- **Результаты**: 
+  - `background.ts` уменьшен с ~300 строк до ~60 строк (-80%)
+  - Убрано дублирование кода
+  - Централизованное логирование и валидация
+  - Изолированные компоненты для тестирования
 
 #### 2. Умная Логика Показа Сайдпанели (НОВОЕ)
 - **Проблема**: Сайдпанель открывалась на всех сайтах, что могло быть навязчивым
@@ -27,12 +36,12 @@
 
 #### Детальная Документация Механизма Умной Сайдпанели
 
-##### Архитектура Решения
+##### Архитектура Решения (Обновлено)
 ```
-Background Script → Plugin Manager → Manifest Analysis → Site Compatibility Check → Sidebar Control
+Background Script → useBackgroundScript → usePluginManager → Manifest Analysis → Site Compatibility Check → useSidebarController
 ```
 
-##### Ключевые Компоненты
+##### Ключевые Компоненты (Обновлено)
 
 **1. Анализ Плагинов (`usePluginManager.ts`)**
 ```typescript
@@ -65,14 +74,16 @@ const isSiteCompatible = (url: string): boolean => {
 };
 ```
 
-**3. Управление Сайдпанелью (`useChromeApi.ts`)**
+**3. Управление Сайдпанелью (`useSidebarController.ts`)**
 ```typescript
-// Открытие сайдпанели только на совместимых сайтах
-const openSidebarIfCompatible = async (tabId: number, url: string) => {
-  if (isSiteCompatible(url)) {
-    await chrome.sidePanel.open({ tabId });
+// Настройка сайдпанели для конкретной вкладки
+const configureSidePanelForTab = async (tab: chrome.tabs.Tab): Promise<void> => {
+  if (isProtectedUrl(tab.url)) {
+    await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false });
+  } else {
+    const sidebarUrl = `sidepanel.html?tabId=${tab.id}&url=${encodeURIComponent(tab.url || '')}`;
+    await chrome.sidePanel.setOptions({ tabId: tab.id, path: sidebarUrl, enabled: true });
   }
-  // На несовместимых сайтах сайдпанель остается закрытой
 };
 ```
 
@@ -105,14 +116,15 @@ const openSidebarIfCompatible = async (tabId: number, url: string) => {
 - Обработка международных доменов
 - Корректная работа с HTTPS/HTTP
 
-##### Восстановление Механизма
+##### Восстановление Механизма (Обновлено)
 
 **Если механизм поврежден:**
 
 1. **Проверка файлов:**
    - `src/hooks/usePluginManager.ts` - функция `getCompatibleSites()`
-   - `src/hooks/useChromeApi.ts` - функция `openSidebarIfCompatible()`
+   - `src/hooks/useSidebarController.ts` - функция `configureSidePanelForTab()`
    - `src/hooks/useBackgroundScript.ts` - обработка событий вкладок
+   - `REFACTORING_SUMMARY.md` - подробный обзор архитектуры
 
 2. **Ключевые функции для восстановления:**
    ```typescript
@@ -121,9 +133,9 @@ const openSidebarIfCompatible = async (tabId: number, url: string) => {
      // Логика извлечения доменов из плагинов
    };
    
-   // В useChromeApi.ts
-   export const openSidebarIfCompatible = async (tabId: number, url: string) => {
-     // Логика проверки совместимости и открытия сайдпанели
+   // В useSidebarController.ts
+   export const configureSidePanelForTab = async (tab: chrome.tabs.Tab): Promise<void> => {
+     // Логика настройки сайдпанели
    };
    ```
 

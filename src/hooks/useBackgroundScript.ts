@@ -1,8 +1,8 @@
 /**
  * src/hooks/useBackgroundScript.ts
  * 
- * Пример использования hooks в background script.
- * Показывает, как организовать код с помощью hooks.
+ * Основная логика background script с использованием hooks-архитектуры.
+ * Координирует работу всех hooks и обрабатывает сообщения.
  */
 
 import { 
@@ -14,7 +14,27 @@ import {
 } from './useChromeApi';
 import { sendMessageWithResponse, ping, getTabStates } from './useMessageHandler';
 import { getAvailablePlugins, runPlugin, interruptPlugin, isSiteCompatible } from './usePluginManager';
-import { isValidTabId, isValidPluginName, isProtectedUrl } from '../utils/validation';
+import { 
+    getPluginsList, 
+    runPluginCommand, 
+    interruptPluginCommand
+} from './usePluginHandler';
+import { 
+    getOrCreateTabState, 
+    setTabState, 
+    getAllTabStates,
+    addChatMessage,
+    updateChatInput,
+    clearChat,
+    setActivePlugin,
+    initializeStateManager
+} from './useStateManager';
+import { 
+    configureSidePanelForTab,
+    toggleSidebarDirectly,
+    isProtectedUrl
+} from './useSidebarController';
+import { isValidTabId, isValidPluginName } from '../utils/validation';
 import { logInfo, logError, logWarn } from '../utils/logging';
 
 /**
@@ -23,6 +43,9 @@ import { logInfo, logError, logWarn } from '../utils/logging';
 export async function initializeBackgroundScript(): Promise<void> {
     try {
         logInfo('Инициализация background script');
+        
+        // Инициализируем менеджер состояний
+        initializeStateManager();
         
         // Проверяем связь
         const isConnected = await ping();
@@ -50,7 +73,7 @@ function setupTabEventHandlers(): void {
                 logInfo('Вкладка обновлена', { tabId, url: tab.url });
                 
                 // Настраиваем сайдпанель для вкладки
-                await configureSidebarForTab(tab);
+                await configureSidePanelForTab(tab);
                 
                 // Управляем видимостью сайдпанели на основе совместимости
                 await manageSidebarForSite(tabId, tab.url);
@@ -78,7 +101,7 @@ function setupTabEventHandlers(): void {
                 logInfo('Новая вкладка создана', { tabId: tab.id, url: tab.url });
                 
                 // Настраиваем сайдпанель для новой вкладки
-                await configureSidebarForTab(tab);
+                await configureSidePanelForTab(tab);
                 
                 // Управляем видимостью сайдпанели
                 await manageSidebarForSite(tab.id!, tab.url);
@@ -110,20 +133,20 @@ export async function handleUIMessage(message: any, sender: any): Promise<any> {
                 return { success: true, pong: true };
 
             case 'GET_PLUGINS':
-                const plugins = await getAvailablePlugins(message.url);
+                const plugins = await getPluginsList(message.url);
                 return { success: true, data: plugins };
 
             case 'RUN_PLUGIN':
                 if (!isValidTabId(tabId) || !isValidPluginName(message.pluginName)) {
                     return { success: false, error: 'Invalid tabId or pluginName' };
                 }
-                return await runPlugin(message.pluginName, tabId);
+                return await runPluginCommand(message.pluginName, tabId);
 
             case 'INTERRUPT_PLUGIN':
                 if (!isValidPluginName(message.pluginName)) {
                     return { success: false, error: 'Invalid pluginName' };
                 }
-                return await interruptPlugin(message.pluginName);
+                return await interruptPluginCommand(message.pluginName, getAllTabStates);
 
             case 'GET_ALL_STATES':
                 if (!isValidTabId(tabId)) {
@@ -131,15 +154,66 @@ export async function handleUIMessage(message: any, sender: any): Promise<any> {
                 }
                 return await getTabStates(tabId);
 
+            case 'SEND_MESSAGE':
+                if (!isValidTabId(tabId)) {
+                    return { success: false, error: 'Invalid tabId' };
+                }
+                const state = await getOrCreateTabState(tabId);
+                const activePlugin = state.activePluginName;
+                
+                if (activePlugin && message.content) {
+                    await addChatMessage(tabId, activePlugin, {
+                        type: 'user',
+                        content: message.content
+                    });
+                }
+                return { success: true };
+
+            case 'UPDATE_INPUT':
+                if (!isValidTabId(tabId)) {
+                    return { success: false, error: 'Invalid tabId' };
+                }
+                const state2 = await getOrCreateTabState(tabId);
+                const activePlugin2 = state2.activePluginName;
+                
+                if (activePlugin2 && message.input !== undefined) {
+                    await updateChatInput(tabId, activePlugin2, message.input);
+                }
+                return { success: true };
+
+            case 'CLEAR_CHAT':
+                if (!isValidTabId(tabId)) {
+                    return { success: false, error: 'Invalid tabId' };
+                }
+                const state3 = await getOrCreateTabState(tabId);
+                const activePlugin3 = state3.activePluginName;
+                
+                if (activePlugin3) {
+                    await clearChat(tabId, activePlugin3);
+                }
+                return { success: true };
+
             case 'TOGGLE_SIDEBAR_REQUEST':
                 if (!isValidTabId(tabId)) {
                     return { success: false, error: 'Invalid tabId' };
                 }
-                // Здесь можно добавить логику переключения sidebar
+                await toggleSidebarDirectly(tabId);
                 return { success: true };
 
+            case 'GET_CURRENT_TAB_ID':
+                if (sender.tab && sender.tab.id) {
+                    return { success: true, tabId: sender.tab.id };
+                } else {
+                    try {
+                        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                        return { success: true, tabId: tab?.id };
+                    } catch (e) {
+                        return { success: false, error: (e as Error).message };
+                    }
+                }
+
             default:
-                logWarn('Неизвестный тип сообщения', { type });
+                logWarn('Неизвестный тип UI сообщения', { type });
                 return { success: false, error: 'Unknown message type' };
         }
     } catch (error) {
@@ -177,13 +251,13 @@ export async function handleHostApiMessage(message: any, sender: any): Promise<a
                 if (!isValidTabId(tabId)) {
                     return { success: false, error: 'Invalid tab ID' };
                 }
-                return await runPlugin(data.pluginName, tabId);
+                return await runPluginCommand(data.pluginName, tabId);
 
             case 'interrupt_plugin':
                 if (!data?.pluginName || !isValidPluginName(data.pluginName)) {
                     return { success: false, error: 'Invalid plugin name' };
                 }
-                return await interruptPlugin(data.pluginName);
+                return await interruptPluginCommand(data.pluginName, getAllTabStates);
 
             default:
                 logWarn('Неизвестная Host API команда', { command });
@@ -192,31 +266,5 @@ export async function handleHostApiMessage(message: any, sender: any): Promise<a
     } catch (error) {
         logError('Ошибка обработки Host API сообщения', { command, error });
         return { error: (error as Error).message };
-    }
-}
-
-/**
- * Настройка sidebar для вкладки
- */
-export async function configureSidebarForTab(tab: chrome.tabs.Tab): Promise<void> {
-    if (!tab.id) {
-        logWarn('Нет ID вкладки для настройки sidebar');
-        return;
-    }
-
-    try {
-        if (isProtectedUrl(tab.url)) {
-            await chrome.sidePanel.setOptions({
-                tabId: tab.id,
-                enabled: false
-            });
-            logInfo('Sidebar отключен для защищенной вкладки', { tabId: tab.id, url: tab.url });
-        } else {
-            // Настраиваем опции сайдпанели
-            await configureSidebarOptions(tab.id, tab.url || '');
-            logInfo('Sidebar настроен для вкладки', { tabId: tab.id, url: tab.url });
-        }
-    } catch (error) {
-        logError('Ошибка настройки sidebar для вкладки', { tabId: tab.id, error });
     }
 } 

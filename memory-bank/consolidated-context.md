@@ -178,12 +178,39 @@ agent-plugins-platform/
 └── dist/                 # Build output
 ```
 
-### Hooks Architecture (НОВОЕ)
+### Hooks Architecture (НОВОЕ - v0.9.3)
 - **Модульность**: Разделение монолитного background script на специализированные модули
 - **Тестируемость**: Каждый hook можно тестировать изолированно
 - **Читаемость**: Четкое разделение ответственности
 - **Безопасность**: Централизованная валидация и логирование
 - **Расширяемость**: Легкое добавление новых функций
+- **Переиспользование**: Hooks можно использовать в разных частях приложения
+
+#### Полная Hooks-архитектура (НОВОЕ)
+**Структура hooks:**
+```
+src/hooks/
+├── index.ts              # Централизованный экспорт всех hooks
+├── README.md             # Полная документация hooks-архитектуры
+├── useBackgroundScript.ts # Координация всех hooks и основная логика
+├── useChromeApi.ts       # Централизованное управление Chrome API
+├── useStateManager.ts    # Управление состоянием вкладок, чатов и плагинов
+├── usePluginManager.ts   # Управление жизненным циклом плагинов
+├── usePluginHandler.ts   # Специализированная обработка команд плагинов
+├── useSidebarController.ts # Управление сайдпанелью и её поведением
+└── useMessageHandler.ts  # Обработка сообщений между компонентами
+```
+
+**Ключевые преимущества:**
+- `background.ts` уменьшен с ~300 строк до ~60 строк (-80%)
+- Убрано дублирование кода
+- Централизованное логирование и валидация
+- Изолированные компоненты для тестирования
+- Единообразные интерфейсы
+
+**Документация:**
+- `REFACTORING_SUMMARY.md` - подробный обзор проведенного рефакторинга
+- `src/hooks/README.md` - полная документация hooks-архитектуры
 
 ### Умная Логика Показа Сайдпанели (НОВОЕ)
 - **Контекстная активация**: Сайдпанель показывается только на сайтах с плагинами
@@ -191,73 +218,17 @@ agent-plugins-platform/
 - **Текущие сайты**: ozon.ru (ozon-analyzer), google.com (google-helper)
 - **Graceful fallback**: Корректная обработка сайтов без плагинов
 
-#### Детальная Архитектура Умной Сайдпанели
+#### Детальная Архитектура Умной Сайдпанели (Обновлено)
 
-**Поток выполнения:**
+**Поток выполнения (hooks-архитектура):**
 ```
-Tab Update Event → URL Analysis → Plugin Compatibility Check → Sidebar Control Decision
+Tab Update Event → useBackgroundScript → usePluginManager → Manifest Analysis → Site Compatibility Check → useSidebarController
 ```
 
 **Ключевые компоненты:**
-
-1. **Plugin Manager Hook** (`src/hooks/usePluginManager.ts`)
-   - Извлекает `host_permissions` из всех загруженных плагинов
-   - Преобразует паттерны разрешений в домены
-   - Возвращает список совместимых сайтов
-
-2. **Chrome API Hook** (`src/hooks/useChromeApi.ts`)
-   - Проверяет совместимость текущего URL с плагинами
-   - Управляет открытием/закрытием сайдпанели
-   - Обрабатывает события вкладок
-
-3. **Background Script Hook** (`src/hooks/useBackgroundScript.ts`)
-   - Слушает события обновления вкладок
-   - Координирует логику показа сайдпанели
-   - Обеспечивает синхронизацию состояния
-
-**Алгоритм работы:**
-```typescript
-// 1. Получение списка совместимых сайтов
-const compatibleSites = getCompatibleSites(); // ['ozon.ru', 'google.com']
-
-// 2. Проверка совместимости текущего сайта
-const isCompatible = (url: string) => {
-  const domain = new URL(url).hostname;
-  return compatibleSites.some(site => domain.includes(site));
-};
-
-// 3. Управление сайдпанелью
-if (isCompatible(currentUrl)) {
-  await chrome.sidePanel.open({ tabId });
-} else {
-  // Сайдпанель остается закрытой
-}
-```
-
-**Текущие совместимые сайты:**
-- **ozon.ru** - плагин ozon-analyzer для анализа товаров
-- **google.com** - плагин google-helper для поисковой помощи
-
-**Обработка edge cases:**
-- Поддомены (www.ozon.ru, market.ozon.ru)
-- HTTPS/HTTP вариации
-- Международные домены
-- Динамическое обновление при изменении плагинов
-
-**Восстановление механизма:**
-Если механизм поврежден, критически важно восстановить функции:
-- `getCompatibleSites()` в usePluginManager.ts
-- `openSidebarIfCompatible()` в useChromeApi.ts
-- Обработчики событий вкладок в useBackgroundScript.ts
-
-**Fallback реализация:**
-```typescript
-const SIMPLE_COMPATIBLE_SITES = ['ozon.ru', 'google.com'];
-const isSiteCompatibleSimple = (url: string) => {
-  const domain = new URL(url).hostname;
-  return SIMPLE_COMPATIBLE_SITES.some(site => domain.includes(site));
-};
-```
+- `usePluginManager.ts` - извлечение совместимых сайтов из плагинов
+- `useSidebarController.ts` - настройка и управление сайдпанелью
+- `useBackgroundScript.ts` - координация обработки событий вкладок
 
 ### Technical Constraints
 
@@ -624,4 +595,17 @@ const worker = new Worker('pyodide-worker.js', {
 
 ---
 
-*Этот файл содержит полный контекст, видение и опыт работы с проектом Agent-Plugins-Platform. Используйте его для восстановления понимания проекта и продолжения разработки.* 
+*Этот файл содержит полный контекст, видение и опыт работы с проектом Agent-Plugins-Platform. Используйте его для восстановления понимания проекта и продолжения разработки.*
+
+### 3. Самосохранение и Архивация Знаний (НОВОЕ)
+- **Система самосохранения**: Автоматическая архивация знаний между сессиями
+- **Процесс самосохранения**: Структурированный подход к сохранению важной информации
+- **Файл**: `ai-self-preservation-guide.md` - полная инструкция по самосохранению
+- **Внешние ссылки**: 
+  - [Полная инструкция](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/ai-self-preservation-guide.md)
+  - [Обзор системы](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/self-preservation-overview.md)
+  - [Отчет о реализации](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/self-preservation-implementation-report.md)
+- **Принципы**: Автономность, системность, практичность, преемственность, контекстность
+- **Результат**: Непрерывность контекста и опыта работы с проектом
+
+### 4. Пользовательский Опыт 

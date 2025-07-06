@@ -26,6 +26,15 @@
 **Когда загружать**: Только при восстановлении
 **RAW URL**: `https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/6ef21fa8877261f21eae0e2296268cff897fce22/recovery-guide.md`
 
+### 5. Инструкция по Самосохранению (`ai-self-preservation-guide.md`) (НОВОЕ)
+**Содержит**: Система самосохранения и архивации знаний для AI-ассистента
+**Когда загружать**: При необходимости проведения процесса самосохранения
+**RAW URL**: `https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/ai-self-preservation-guide.md`
+**Дополнительные ссылки**:
+- [Обзор системы](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/self-preservation-overview.md)
+- [Отчет о реализации](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/self-preservation-implementation-report.md)
+- [Обновления Memory Bank](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/update-summary.md)
+
 ## Пошаговое Восстановление
 
 ### Шаг 1: Получение RAW URL
@@ -150,14 +159,16 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
 - Сайдпанель не открывается на ozon.ru или google.com
 - Ошибки в консоли при переключении вкладок
 
-**Решение (Пошаговое):**
+**Решение (Пошаговое - ОБНОВЛЕНО для hooks-архитектуры):**
 
-1. **Проверьте ключевые файлы:**
+1. **Проверьте ключевые файлы hooks-архитектуры:**
    ```bash
-   # Проверьте наличие файлов
+   # Проверьте наличие файлов hooks
    ls -la src/hooks/usePluginManager.ts
-   ls -la src/hooks/useChromeApi.ts
+   ls -la src/hooks/useSidebarController.ts
    ls -la src/hooks/useBackgroundScript.ts
+   ls -la src/hooks/index.ts
+   ls -la REFACTORING_SUMMARY.md
    ```
 
 2. **Восстановите функцию getCompatibleSites в usePluginManager.ts:**
@@ -177,11 +188,23 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
    };
    ```
 
-3. **Восстановите функцию openSidebarIfCompatible в useChromeApi.ts:**
+3. **Восстановите функцию configureSidePanelForTab в useSidebarController.ts:**
    ```typescript
-   export const openSidebarIfCompatible = async (tabId: number, url: string) => {
-     if (isSiteCompatible(url)) {
-       await chrome.sidePanel.open({ tabId });
+   export const configureSidePanelForTab = async (tab: chrome.tabs.Tab): Promise<void> => {
+     if (!tab.id) return;
+     
+     if (isProtectedUrl(tab.url)) {
+       await chrome.sidePanel.setOptions({
+         tabId: tab.id,
+         enabled: false
+       });
+     } else {
+       const sidebarUrl = `sidepanel.html?tabId=${tab.id}&url=${encodeURIComponent(tab.url || '')}`;
+       await chrome.sidePanel.setOptions({
+         tabId: tab.id,
+         path: sidebarUrl,
+         enabled: true
+       });
      }
    };
    ```
@@ -189,9 +212,10 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
 4. **Проверьте обработку событий вкладок в useBackgroundScript.ts:**
    ```typescript
    // Обработка обновления вкладки
-   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
      if (changeInfo.status === 'complete' && tab.url) {
-       openSidebarIfCompatible(tabId, tab.url);
+       await configureSidePanelForTab(tab);
+       await manageSidebarForSite(tabId, tab.url);
      }
    });
    ```
@@ -206,47 +230,114 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
    };
    ```
 
-6. **Тестирование восстановления:**
-   - Откройте ozon.ru - сайдпанель должна автоматически открыться
-   - Откройте google.com - сайдпанель должна автоматически открыться
-   - Откройте любой другой сайт (например, github.com) - сайдпанель должна остаться закрытой
-
-7. **Пересоберите проект:**
-   ```bash
-   rm -rf dist && npm run build
+6. **Проверьте централизованный экспорт в src/hooks/index.ts:**
+   ```typescript
+   export {
+     configureSidePanelForTab,
+     toggleSidebarDirectly,
+     openSidebarForTab,
+     closeSidebarForTab
+   } from './useSidebarController';
    ```
 
-8. **Проверьте логи в DevTools:**
-   - Откройте DevTools расширения
-   - Переключитесь между вкладками
-   - Проверьте логи на наличие ошибок
+7. **Изучите REFACTORING_SUMMARY.md для понимания полной архитектуры:**
+   ```bash
+   cat REFACTORING_SUMMARY.md
+   ```
 
-**Аварийное восстановление:**
-Если ничего не помогает, используйте простую проверку в useChromeApi.ts:
-```typescript
-export const openSidebarIfCompatible = async (tabId: number, url: string) => {
-  const domain = new URL(url).hostname;
-  if (domain.includes('ozon.ru') || domain.includes('google.com')) {
-    await chrome.sidePanel.open({ tabId });
-  }
-};
-```
-
-### Проблема: Сбои при установке зависимостей или сборке проекта (`npm install`, `npm run build`)
+### Проблема: Hooks-архитектура повреждена (КРИТИЧНО - НОВОЕ)
 **Симптомы:**
-- Ошибки `FETCH_ERROR` или `segmentation fault (core dumped)` при выполнении `npm install`.
-- Ошибки `vite: command not found` при выполнении `npm run build`.
+- Ошибки импорта в background.ts
+- Функции не найдены в hooks
+- Дублирование кода между модулями
+- background.ts стал большим и сложным
 
-**Решение (Первоочередное):**
-1.  Чаще всего проблема связана с поврежденным кэшем `npm`. Выполните следующую команду для принудительной очистки кэша:
-    ```bash
-    npm cache clean --force
-    ```
-2.  После успешной очистки кэша повторите установку зависимостей:
-    ```bash
-    npm install
-    ```
-3.  Если это не помогло, проблема может быть глубже (несоответствие версий Node.js, системные проблемы). В таком случае может потребоваться полная переустановка Node.js (предпочтительно через `nvm`).
+**Решение (Пошаговое):**
+
+1. **Проверьте структуру hooks:**
+   ```bash
+   ls -la src/hooks/
+   # Должны быть: index.ts, README.md, useBackgroundScript.ts, useChromeApi.ts, 
+   # useStateManager.ts, usePluginHandler.ts, useSidebarController.ts, useMessageHandler.ts, usePluginManager.ts
+   ```
+
+2. **Восстановите централизованный экспорт в src/hooks/index.ts:**
+   ```typescript
+   // Chrome API hooks
+   export {
+     getActiveTab,
+     getTabById,
+     sendMessageToTab,
+     manageSidebarForSite,
+     configureSidebarOptions,
+     storage
+   } from './useChromeApi';
+   
+   // State management hooks
+   export {
+     getOrCreateTabState,
+     setTabState,
+     getAllTabStates,
+     addChatMessage,
+     updateChatInput,
+     clearChat,
+     setActivePlugin,
+     addRunningPlugin,
+     removeRunningPlugin,
+     initializeStateManager
+   } from './useStateManager';
+   
+   // Sidebar controller hooks
+   export {
+     configureSidePanelForTab,
+     toggleSidebarDirectly,
+     openSidebarForTab,
+     closeSidebarForTab,
+     getSidebarState,
+     isSidebarOpen,
+     isProtectedUrl
+   } from './useSidebarController';
+   
+   // Background script hooks
+   export {
+     initializeBackgroundScript,
+     handleUIMessage,
+     handleHostApiMessage
+   } from './useBackgroundScript';
+   ```
+
+3. **Упростите background.ts до hooks-архитектуры:**
+   ```typescript
+   import { 
+     initializeBackgroundScript, 
+     handleUIMessage, 
+     handleHostApiMessage,
+     toggleSidebarDirectly
+   } from './hooks';
+   import { logInfo, logError } from './utils/logging';
+   
+   console.log("APP Background Script Loaded (v0.9.3 - Полная hooks-архитектура).");
+   
+   // Инициализация
+   initializeBackgroundScript().catch(error => {
+     logError('Ошибка инициализации background script', error);
+   });
+   
+   // Обработчик сообщений
+   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+     // ... обработка сообщений через hooks
+   });
+   ```
+
+4. **Проверьте документацию hooks:**
+   ```bash
+   cat src/hooks/README.md
+   ```
+
+5. **Изучите REFACTORING_SUMMARY.md:**
+   ```bash
+   cat REFACTORING_SUMMARY.md
+   ```
 
 ## Обновление Контекста
 
