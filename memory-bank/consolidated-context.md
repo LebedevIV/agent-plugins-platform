@@ -11,6 +11,7 @@
 - **Практичность**: Предпочитаю работающие решения сложным абстракциям
 - **Документирование**: Всё важное записываю и структурирую
 - **Итеративность**: Малые изменения, быстрая обратная связь, постоянное улучшение
+- **Модульность**: Разбиваю сложные системы на простые, тестируемые компоненты
 
 ### Мои принципы
 1. **Изоляция и безопасность** - каждый компонент должен быть изолирован
@@ -18,12 +19,15 @@
 3. **Обработка ошибок** - всегда предусматриваю graceful degradation
 4. **Производительность** - оптимизирую критичные пути
 5. **Расширяемость** - проектирую для будущего роста
+6. **Умный UX** - показываю функциональность только там, где она нужна
 
 ### Мой опыт с этим проектом
 - **Глубокое понимание архитектуры**: Знаю каждый компонент и его роль
 - **История решений**: Помню все принятые решения и их обоснования
 - **Проблемы и решения**: Знаю все найденные проблемы и их решения
 - **Видение будущего**: Понимаю направление развития проекта
+- **Hooks-архитектура**: Рефакторинг монолитного кода в модульную систему
+- **Умная сайдпанель**: Логика показа только на релевантных сайтах
 
 ---
 
@@ -152,6 +156,15 @@ Agent-Plugins-Platform provides a secure, standardized way to run Python code di
 #### Core Directories
 ```
 agent-plugins-platform/
+├── src/                  # Source files (НОВОЕ)
+│   ├── hooks/           # Hooks architecture (НОВОЕ)
+│   │   ├── useChromeApi.ts
+│   │   ├── useMessageHandler.ts
+│   │   ├── usePluginManager.ts
+│   │   └── useBackgroundScript.ts
+│   └── utils/           # Utility modules (НОВОЕ)
+│       ├── validation.ts
+│       └── logging.ts
 ├── core/                 # Core application logic
 │   ├── plugin-manager.js # Plugin lifecycle management
 │   ├── host-api.js       # Browser API access
@@ -162,8 +175,88 @@ agent-plugins-platform/
 ├── public/               # Static assets
 │   └── plugins/          # Python plugin directory
 ├── ui/                   # User interface components
-├── src/                  # Source files
 └── dist/                 # Build output
+```
+
+### Hooks Architecture (НОВОЕ)
+- **Модульность**: Разделение монолитного background script на специализированные модули
+- **Тестируемость**: Каждый hook можно тестировать изолированно
+- **Читаемость**: Четкое разделение ответственности
+- **Безопасность**: Централизованная валидация и логирование
+- **Расширяемость**: Легкое добавление новых функций
+
+### Умная Логика Показа Сайдпанели (НОВОЕ)
+- **Контекстная активация**: Сайдпанель показывается только на сайтах с плагинами
+- **Автоматическое определение**: Анализ host_permissions в manifest.json плагинов
+- **Текущие сайты**: ozon.ru (ozon-analyzer), google.com (google-helper)
+- **Graceful fallback**: Корректная обработка сайтов без плагинов
+
+#### Детальная Архитектура Умной Сайдпанели
+
+**Поток выполнения:**
+```
+Tab Update Event → URL Analysis → Plugin Compatibility Check → Sidebar Control Decision
+```
+
+**Ключевые компоненты:**
+
+1. **Plugin Manager Hook** (`src/hooks/usePluginManager.ts`)
+   - Извлекает `host_permissions` из всех загруженных плагинов
+   - Преобразует паттерны разрешений в домены
+   - Возвращает список совместимых сайтов
+
+2. **Chrome API Hook** (`src/hooks/useChromeApi.ts`)
+   - Проверяет совместимость текущего URL с плагинами
+   - Управляет открытием/закрытием сайдпанели
+   - Обрабатывает события вкладок
+
+3. **Background Script Hook** (`src/hooks/useBackgroundScript.ts`)
+   - Слушает события обновления вкладок
+   - Координирует логику показа сайдпанели
+   - Обеспечивает синхронизацию состояния
+
+**Алгоритм работы:**
+```typescript
+// 1. Получение списка совместимых сайтов
+const compatibleSites = getCompatibleSites(); // ['ozon.ru', 'google.com']
+
+// 2. Проверка совместимости текущего сайта
+const isCompatible = (url: string) => {
+  const domain = new URL(url).hostname;
+  return compatibleSites.some(site => domain.includes(site));
+};
+
+// 3. Управление сайдпанелью
+if (isCompatible(currentUrl)) {
+  await chrome.sidePanel.open({ tabId });
+} else {
+  // Сайдпанель остается закрытой
+}
+```
+
+**Текущие совместимые сайты:**
+- **ozon.ru** - плагин ozon-analyzer для анализа товаров
+- **google.com** - плагин google-helper для поисковой помощи
+
+**Обработка edge cases:**
+- Поддомены (www.ozon.ru, market.ozon.ru)
+- HTTPS/HTTP вариации
+- Международные домены
+- Динамическое обновление при изменении плагинов
+
+**Восстановление механизма:**
+Если механизм поврежден, критически важно восстановить функции:
+- `getCompatibleSites()` в usePluginManager.ts
+- `openSidebarIfCompatible()` в useChromeApi.ts
+- Обработчики событий вкладок в useBackgroundScript.ts
+
+**Fallback реализация:**
+```typescript
+const SIMPLE_COMPATIBLE_SITES = ['ozon.ru', 'google.com'];
+const isSiteCompatibleSimple = (url: string) => {
+  const domain = new URL(url).hostname;
+  return SIMPLE_COMPATIBLE_SITES.some(site => domain.includes(site));
+};
 ```
 
 ### Technical Constraints

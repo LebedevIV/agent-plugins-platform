@@ -7,7 +7,7 @@
  * и управляя поведением иконки расширения.
  */
 
-import { configureSidePanelForTab } from './modules/sidebar-controller';
+import { configureSidePanelForTab, toggleSidebarDirectly } from './modules/sidebar-controller';
 import { getOrCreateTabState, setTabState, getAllTabStates } from './modules/state-manager';
 import { getPluginsList, runPluginCommand, interruptPluginCommand } from './modules/plugin-handler';
 import { hostApiImpl } from './modules/host-api-impl';
@@ -136,50 +136,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         else if (message.source === 'app-host-api') {
             const { command, data, targetTabId } = message;
             
-            switch (command) {
-                case "getActivePageContent":
-                    if (!targetTabId) {
-                        sendResponse({ error: "Target tab ID was not provided." });
+  switch (command) {
+    case "getActivePageContent":
+      if (!targetTabId) {
+        sendResponse({ error: "Target tab ID was not provided." });
                         return;
                     }
                     const content = await hostApiImpl.getActivePageContent(targetTabId);
                     sendResponse(content);
                     break;
-                case "getElements":
-                    if (!targetTabId) {
-                        sendResponse({ error: "Target tab ID was not provided." });
+    case "getElements":
+      if (!targetTabId) {
+        sendResponse({ error: "Target tab ID was not provided." });
                         return;
                     }
                     const elements = await hostApiImpl.getElements(targetTabId, data);
                     sendResponse(elements);
                     break;
-                case "host_fetch":
-                    try {
+      case "host_fetch":
+            try {
                         const jsonData = await hostApiImpl.fetchWithRetry(data.url);
-                        sendResponse({ error: false, data: jsonData });
-                    } catch (err: any) {
-                        sendResponse({ error: true, error_message: err.message });
-                    }
+                sendResponse({ error: false, data: jsonData });
+            } catch (err: any) {
+                sendResponse({ error: true, error_message: err.message });
+            }
                     break;
-                case "analyzeConnectionStats":
-                    if (!data || !data.hostname) {
-                        sendResponse({ error: "Hostname was not provided." });
+    case "analyzeConnectionStats":
+      if (!data || !data.hostname) {
+        sendResponse({ error: "Hostname was not provided." });
                         return;
                     }
                     const stats = await hostApiImpl.analyzeConnectionStats(data);
                     sendResponse(stats);
                     break;
-                case "run_plugin":
-                     if (!data || !data.pluginName) {
-                         sendResponse({ success: false, error: "Plugin name was not provided." });
+    case "run_plugin":
+      if (!data || !data.pluginName) {
+        sendResponse({ success: false, error: "Plugin name was not provided." });
                          return;
                      }
                     const runResponse = await runPluginCommand(data.pluginName, sender.tab?.id);
                     sendResponse(runResponse);
                     break;
-                case "interrupt_plugin":
-                    if (!data || !data.pluginName) {
-                        sendResponse({ success: false, error: "Plugin name was not provided." });
+    case "interrupt_plugin":
+      if (!data || !data.pluginName) {
+        sendResponse({ success: false, error: "Plugin name was not provided." });
                         return;
                     }
                     const interruptResponse = await interruptPluginCommand(data.pluginName, getAllTabStates);
@@ -285,9 +285,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
               runPluginCommand(plugin.name, tabId); 
             }
           }
-        } catch (error) {
+    } catch (error) {
           console.error('[AutoRun] Ошибка при автозапуске плагинов:', error);
-        }
+    }
   }
 });
 

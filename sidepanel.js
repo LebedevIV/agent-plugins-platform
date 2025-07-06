@@ -140,13 +140,13 @@ class SidebarChat {
             const urlParams = new URLSearchParams(window.location.search);
             const tabId = parseInt(urlParams.get('tabId'));
             const url = urlParams.get('url');
-
+            
             if (!tabId) {
                 throw new Error("Tab ID не найден в URL.");
             }
 
-            this.currentTabId = tabId;
-            this.currentUrl = url;
+                this.currentTabId = tabId;
+                this.currentUrl = url;
             console.log('Боковая панель: Загружена вкладка из URL параметров', { tabId: this.currentTabId, url: this.currentUrl });
 
             // ОЖИДАЕМ УСТАНОВКИ СОЕДИНЕНИЯ
@@ -558,7 +558,7 @@ class SidebarChat {
             this.pluginChatStates[this.activePluginName].chatHistory = [];
         }
         this.renderChatHistory();
-
+            
         // Отправляем запрос в background
         try {
             await chrome.runtime.sendMessage({
@@ -592,7 +592,7 @@ class SidebarChat {
                     break;
                 case 'ADD_PLUGIN_MESSAGE':
                      this.addPluginMessage(message.pluginName, message.content);
-                     break;
+                    break;
             }
         });
     }
@@ -609,7 +609,7 @@ class SidebarChat {
         }
 
         this.updateUI();
-    }
+        }
 
     updateUI() {
         this.updateContextUrlDisplay();
@@ -625,7 +625,7 @@ class SidebarChat {
         if (this.currentUrl) {
             contextUrlDisplay.textContent = this.currentUrl;
             contextUrlDisplay.style.display = 'inline';
-        } else {
+            } else {
             contextUrlDisplay.textContent = 'Контекст не определен';
             contextUrlDisplay.style.display = 'inline';
         }
@@ -661,12 +661,12 @@ class SidebarChat {
     }
 
     async updateContext(tab) {
-        this.currentUrl = tab.url;
+            this.currentUrl = tab.url;
         this.currentTabId = tab.id;
         console.log("Sidebar: Обновление контекста для вкладки", tab);
-
+            
         this.updateContextUrlDisplay();
-        await this.loadPlugins();
+            await this.loadPlugins();
         await this.loadChatHistory();
     }
 
@@ -735,7 +735,7 @@ class SidebarChat {
     updateSinglePluginState(pluginName, state) {
         const pluginContainer = document.querySelector(`.plugin-button-container[data-plugin-name="${pluginName}"]`);
         if (!pluginContainer) return;
-
+            
         // Если состояние не определено, используем значения по умолчанию.
         const { enabled = true, autoRun = false } = state || {};
 

@@ -10,9 +10,8 @@
 // import { pluginStateManager } from '../core/index.js';
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from './toast-notifications.js';
 import { createPluginCard } from './PluginCard.js';
-import { LogManager } from './log-manager.js';
-import { JsonViewer } from './json-viewer.js';
-import { ToastNotifications } from './toast-notifications.js';
+import { createRunLogger } from './log-manager.js';
+import { createJsonViewer } from './json-viewer.js';
 
 // --- КОД ИЗ core/plugin-state-manager.js ---
 const pluginStateManager = {

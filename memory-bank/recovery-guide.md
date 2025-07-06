@@ -96,24 +96,31 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
 - [ ] Знает о MCP протоколе и Pyodide
 - [ ] Понимает структуру плагинов
 - [ ] Знает о боковой панели и изоляции по вкладкам
+- [ ] Понимает hooks-архитектуру (НОВОЕ)
+- [ ] Знает об умной логике показа сайдпанели (НОВОЕ)
 
 ### ✅ Принципы работы
 - [ ] Приоритет безопасности
 - [ ] Архитектурное мышление
 - [ ] Фокус на производительность и UX
 - [ ] Модульность и переиспользование
+- [ ] Умный UX - показ функциональности только там, где она нужна (НОВОЕ)
 
 ### ✅ Технические детали
 - [ ] Знает структуру файлов проекта
 - [ ] Понимает поток коммуникации
 - [ ] Знает о AI интеграции (Gemini API)
 - [ ] Понимает систему управления API ключами
+- [ ] Знает о hooks-модулях: useChromeApi, useMessageHandler, usePluginManager, useBackgroundScript (НОВОЕ)
+- [ ] Понимает умную логику показа сайдпанели на ozon.ru и google.com (НОВОЕ)
 
 ### ✅ Текущее состояние
 - [ ] Знает о завершенных функциях
 - [ ] Понимает активные задачи
 - [ ] Знает о известных проблемах
 - [ ] Понимает следующие шаги
+- [ ] Знает о рефакторинге в hooks-архитектуру (НОВОЕ)
+- [ ] Понимает контекстную активацию сайдпанели (НОВОЕ)
 
 ## Troubleshooting
 
@@ -136,6 +143,94 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
 1. Добавьте недостающие файлы
 2. Проверьте порядок загрузки
 3. Убедитесь, что все обязательные файлы добавлены
+
+### Проблема: Механизм умной сайдпанели поврежден (КРИТИЧНО)
+**Симптомы:**
+- Сайдпанель открывается на всех сайтах вместо только ozon.ru и google.com
+- Сайдпанель не открывается на ozon.ru или google.com
+- Ошибки в консоли при переключении вкладок
+
+**Решение (Пошаговое):**
+
+1. **Проверьте ключевые файлы:**
+   ```bash
+   # Проверьте наличие файлов
+   ls -la src/hooks/usePluginManager.ts
+   ls -la src/hooks/useChromeApi.ts
+   ls -la src/hooks/useBackgroundScript.ts
+   ```
+
+2. **Восстановите функцию getCompatibleSites в usePluginManager.ts:**
+   ```typescript
+   export const getCompatibleSites = (): string[] => {
+     const sites = new Set<string>();
+     plugins.forEach(plugin => {
+       const manifest = plugin.manifest;
+       if (manifest.host_permissions) {
+         manifest.host_permissions.forEach(permission => {
+           const domain = extractDomainFromPermission(permission);
+           if (domain) sites.add(domain);
+         });
+       }
+     });
+     return Array.from(sites);
+   };
+   ```
+
+3. **Восстановите функцию openSidebarIfCompatible в useChromeApi.ts:**
+   ```typescript
+   export const openSidebarIfCompatible = async (tabId: number, url: string) => {
+     if (isSiteCompatible(url)) {
+       await chrome.sidePanel.open({ tabId });
+     }
+   };
+   ```
+
+4. **Проверьте обработку событий вкладок в useBackgroundScript.ts:**
+   ```typescript
+   // Обработка обновления вкладки
+   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+     if (changeInfo.status === 'complete' && tab.url) {
+       openSidebarIfCompatible(tabId, tab.url);
+     }
+   });
+   ```
+
+5. **Используйте fallback реализацию если основной механизм не работает:**
+   ```typescript
+   const SIMPLE_COMPATIBLE_SITES = ['ozon.ru', 'google.com'];
+   
+   const isSiteCompatibleSimple = (url: string): boolean => {
+     const domain = new URL(url).hostname;
+     return SIMPLE_COMPATIBLE_SITES.some(site => domain.includes(site));
+   };
+   ```
+
+6. **Тестирование восстановления:**
+   - Откройте ozon.ru - сайдпанель должна автоматически открыться
+   - Откройте google.com - сайдпанель должна автоматически открыться
+   - Откройте любой другой сайт (например, github.com) - сайдпанель должна остаться закрытой
+
+7. **Пересоберите проект:**
+   ```bash
+   rm -rf dist && npm run build
+   ```
+
+8. **Проверьте логи в DevTools:**
+   - Откройте DevTools расширения
+   - Переключитесь между вкладками
+   - Проверьте логи на наличие ошибок
+
+**Аварийное восстановление:**
+Если ничего не помогает, используйте простую проверку в useChromeApi.ts:
+```typescript
+export const openSidebarIfCompatible = async (tabId: number, url: string) => {
+  const domain = new URL(url).hostname;
+  if (domain.includes('ozon.ru') || domain.includes('google.com')) {
+    await chrome.sidePanel.open({ tabId });
+  }
+};
+```
 
 ### Проблема: Сбои при установке зависимостей или сборке проекта (`npm install`, `npm run build`)
 **Симптомы:**

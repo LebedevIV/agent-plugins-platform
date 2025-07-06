@@ -36,4 +36,56 @@ export async function configureSidePanelForTab(tab: chrome.tabs.Tab) {
             enabled: true
         });
     }
+}
+
+/**
+ * Переключает sidebar напрямую из background script
+ * @param tabId - ID вкладки для переключения sidebar
+ */
+export async function toggleSidebarDirectly(tabId: number): Promise<void> {
+    try {
+        console.log(`[SidebarController] Переключение sidebar напрямую для вкладки ${tabId}`);
+        
+        // Проверяем текущее состояние sidebar
+        const sidePanelInfo = await chrome.sidePanel.getOptions({ tabId });
+        console.log('[SidebarController] Текущее состояние sidebar:', sidePanelInfo);
+        
+        if (sidePanelInfo.enabled) {
+            // Если sidebar включен, пытаемся его открыть
+            try {
+                await chrome.sidePanel.open({ tabId: tabId });
+                console.log('[SidebarController] Sidebar открыт успешно');
+            } catch (openError) {
+                console.log('[SidebarController] Не удалось открыть sidebar:', openError.message);
+                // Если не удалось открыть, отключаем его
+                await chrome.sidePanel.setOptions({
+                    tabId: tabId,
+                    enabled: false
+                });
+                console.log('[SidebarController] Sidebar отключен');
+            }
+        } else {
+            // Если sidebar отключен, включаем его
+            const tab = await chrome.tabs.get(tabId);
+            const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(tab.url || '')}`;
+            
+            await chrome.sidePanel.setOptions({
+                tabId: tabId,
+                path: sidebarUrl,
+                enabled: true
+            });
+            console.log('[SidebarController] Sidebar включен с URL:', sidebarUrl);
+            
+            // Пытаемся открыть sidebar
+            try {
+                await chrome.sidePanel.open({ tabId: tabId });
+                console.log('[SidebarController] Sidebar открыт успешно');
+            } catch (openError) {
+                console.log('[SidebarController] Не удалось открыть sidebar автоматически:', openError.message);
+                console.log('[SidebarController] Пользователь может открыть sidebar вручную через меню браузера');
+            }
+        }
+    } catch (error) {
+        console.error('[SidebarController] Ошибка переключения sidebar:', error);
+    }
 } 
