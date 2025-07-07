@@ -1,25 +1,113 @@
 // Content Script для Sidebar Chat System
-console.log('APP Content Script Loaded - Sidebar Integration');
+console.log('=== CONTENT SCRIPT START ===');
+
+// Устанавливаем маркер через postMessage
+window.postMessage({
+    type: 'APP_EXTENSION_LOADED',
+    data: true
+}, '*');
+
+console.log('✅ Маркер отправлен через postMessage');
+
+try {
+    console.log('✅ Chrome API доступен:', !!window.chrome);
+    console.log('✅ Chrome runtime доступен:', !!window.chrome?.runtime);
+} catch (error) {
+    console.error('❌ Ошибка доступа к Chrome API:', error);
+}
+
+// Слушаем сообщения от страницы для проксирования Chrome API
+window.addEventListener('message', async (event) => {
+    if (event.data && event.data.type === 'CHROME_API_REQUEST') {
+        try {
+            const { requestId, method, params } = event.data;
+            
+            console.log(`🔄 Проксирование Chrome API: ${method}`, params);
+            
+            let result;
+            switch (method) {
+                case 'runtime.sendMessage':
+                    if (params && params.type === 'TOGGLE_SIDEBAR' && !params.tabId) {
+                        if (window.__contentScriptManager && window.__contentScriptManager.currentTabId) {
+                            params.tabId = window.__contentScriptManager.currentTabId;
+                        }
+                    }
+                    result = await new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage(params, (response) => {
+                            if (chrome.runtime.lastError) {
+                                reject(chrome.runtime.lastError);
+                            } else {
+                                resolve(response);
+                            }
+                        });
+                    });
+                    break;
+                    
+                case 'runtime.id':
+                    result = chrome.runtime.id;
+                    break;
+                    
+                default:
+                    throw new Error(`Неизвестный метод: ${method}`);
+            }
+            
+            // Отправляем результат обратно на страницу
+            window.postMessage({
+                type: 'CHROME_API_RESPONSE',
+                requestId,
+                result,
+                success: true
+            }, '*');
+            
+        } catch (error) {
+            console.error('❌ Ошибка проксирования Chrome API:', error);
+            
+            window.postMessage({
+                type: 'CHROME_API_RESPONSE',
+                requestId: event.data.requestId,
+                error: error.message,
+                success: false
+            }, '*');
+        }
+    }
+});
 
 class ContentScriptManager {
     constructor() {
         this.activePlugins = new Map();
         this.currentTabId = null;
+        window.__contentScriptManager = this;
         this.init();
     }
 
     async init() {
-        // Убираем запрос tabId при инициализации
-        // await this.getCurrentTabId();
+        await this.getCurrentTabId();
         this.setupMessageListener();
         this.setupSidebarIntegration();
+    }
+
+    async getCurrentTabId() {
+        try {
+            // Получаем tabId через background script
+            const response = await chrome.runtime.sendMessage({
+                type: 'GET_CURRENT_TAB_ID'
+            });
+            
+            if (response && response.success && response.tabId) {
+                this.currentTabId = response.tabId;
+                console.log('Content Script: Получен tabId:', this.currentTabId);
+            } else {
+                console.warn('Content Script: Не удалось получить tabId');
+            }
+        } catch (error) {
+            console.error('Content Script: Ошибка получения tabId:', error);
+        }
     }
 
     setupMessageListener() {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.log('Content Script: Получено сообщение', message);
 
-            // Сохраняем tabId, если он пришел с сообщением
             if (message.tabId) {
                 this.currentTabId = message.tabId;
             }
@@ -50,7 +138,6 @@ class ContentScriptManager {
     }
 
     setupSidebarIntegration() {
-        // Отправляем информацию о текущей странице в sidebar
         this.sendToSidebar({
             type: 'PAGE_INFO',
             url: window.location.href,
@@ -63,22 +150,19 @@ class ContentScriptManager {
         try {
             console.log(`Content Script: Запуск плагина ${pluginName}`);
             
-            // Проверяем, не запущен ли уже плагин
             if (this.activePlugins.has(pluginName)) {
                 console.log(`Content Script: Плагин ${pluginName} уже запущен`);
                 return;
             }
 
-            // Создаем уникальный ID для сессии плагина
             const sessionId = `${pluginName}_${Date.now()}`;
             this.activePlugins.set(pluginName, { sessionId, startTime: Date.now() });
 
-            // Отправляем сообщение в background script для запуска плагина
             const response = await chrome.runtime.sendMessage({
                 source: 'app-host-api',
                 command: 'run_plugin',
                 data: { pluginName, sessionId },
-                targetTabId: null // Будет установлен в background
+                targetTabId: this.currentTabId
             });
 
             if (response && response.success) {
@@ -113,12 +197,11 @@ class ContentScriptManager {
                 return;
             }
 
-            // Отправляем сообщение в background script для прерывания
             const response = await chrome.runtime.sendMessage({
                 source: 'app-host-api',
                 command: 'interrupt_plugin',
                 data: { pluginName, sessionId: pluginInfo.sessionId },
-                targetTabId: null
+                targetTabId: this.currentTabId
             });
 
             if (response && response.success) {
@@ -139,15 +222,12 @@ class ContentScriptManager {
     handleUserMessage(text) {
         console.log('Content Script: Обработка сообщения пользователя:', text);
         
-        // Отправляем сообщение в sidebar
         this.sendToSidebar({
             type: 'USER_MESSAGE_RECEIVED',
             text: text,
             timestamp: Date.now()
         });
 
-        // Здесь можно добавить логику для обработки сообщений плагинами
-        // Например, отправка в активные плагины для обработки
         this.activePlugins.forEach((pluginInfo, pluginName) => {
             this.sendToPlugin(pluginName, {
                 type: 'USER_INPUT',
@@ -158,7 +238,6 @@ class ContentScriptManager {
     }
 
     handleUserTyping(text) {
-        // Отправляем статус печати в sidebar
         this.sendToSidebar({
             type: 'USER_TYPING_UPDATE',
             text: text,
@@ -175,12 +254,9 @@ class ContentScriptManager {
     }
 
     sendToPlugin(pluginName, message) {
-        // Здесь будет логика отправки сообщений в плагины
-        // Пока просто логируем
         console.log(`Content Script: Отправка в плагин ${pluginName}:`, message);
     }
 
-    // Метод для получения информации о странице
     getPageInfo() {
         return {
             url: window.location.href,
@@ -190,7 +266,6 @@ class ContentScriptManager {
         };
     }
 
-    // Метод для получения контента страницы
     getPageContent() {
         return {
             title: document.title,
@@ -200,18 +275,21 @@ class ContentScriptManager {
         };
     }
 
-    // Метод для получения HTML страницы для плагинов
     getPageHtml() {
         return document.documentElement.outerHTML;
     }
 
-    // Метод для переключения sidebar
     async toggleSidebar() {
         try {
             console.log('Content Script: Отправляем запрос на переключение sidebar, tabId:', this.currentTabId);
-            // Отправляем сообщение в background script для переключения sidebar
+            
+            // Если tabId не установлен, попробуем получить его снова
+            if (!this.currentTabId) {
+                await this.getCurrentTabId();
+            }
+            
             await chrome.runtime.sendMessage({
-                type: 'TOGGLE_SIDEBAR_REQUEST',
+                type: 'TOGGLE_SIDEBAR',
                 tabId: this.currentTabId
             });
             console.log('Content Script: Запрос отправлен успешно');
@@ -221,14 +299,14 @@ class ContentScriptManager {
     }
 }
 
-// Инициализация при загрузке страницы
 async function initContentScript() {
-    const manager = new ContentScriptManager();
-    await manager.init();
+    await new ContentScriptManager().init();
 }
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initContentScript);
 } else {
     initContentScript();
-} 
+}
+
+console.log('=== CONTENT SCRIPT END ==='); 

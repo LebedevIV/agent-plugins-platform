@@ -5,7 +5,9 @@
   "author": "APP Team",
   "main_server": "mcp_server.py",
   "host_permissions": [
-    "*://*.ozon.ru/*"
+    "*://*.ozon.ru/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "icon": "icon.svg",
   "permissions": ["activeTab", "scripting"],

@@ -51,44 +51,37 @@ export async function toggleSidebarDirectly(tabId: number): Promise<void> {
     try {
         logInfo('Переключение сайдпанели напрямую', { tabId });
         
+        // Получаем информацию о вкладке
+        const tab = await chrome.tabs.get(tabId);
+        logInfo('Информация о вкладке', { tabId, url: tab.url, status: tab.status });
+        
         // Проверяем текущее состояние сайдпанели
         const sidePanelInfo = await chrome.sidePanel.getOptions({ tabId });
         logInfo('Текущее состояние сайдпанели', { tabId, sidePanelInfo });
         
         if (sidePanelInfo.enabled) {
-            // Если сайдпанель включена, пытаемся ее открыть
-            try {
-                await chrome.sidePanel.open({ tabId: tabId });
-                logInfo('Сайдпанель открыта успешно', { tabId });
-            } catch (openError) {
-                logInfo('Не удалось открыть сайдпанель', { tabId, error: openError.message });
-                // Если не удалось открыть, отключаем ее
-                await chrome.sidePanel.setOptions({
-                    tabId: tabId,
-                    enabled: false
-                });
-                logInfo('Сайдпанель отключена', { tabId });
-            }
+            // Если сайдпанель включена, закрываем её
+            logInfo('Сайдпанель включена, закрываем...', { tabId });
+            await chrome.sidePanel.setOptions({
+                tabId: tabId,
+                enabled: false
+            });
+            logInfo('Сайдпанель отключена', { tabId });
         } else {
-            // Если сайдпанель отключена, включаем ее
-            const tab = await chrome.tabs.get(tabId);
-            const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(tab.url || '')}`;
+            // Если сайдпанель отключена, включаем её
+            logInfo('Сайдпанель отключена, включаем...', { tabId });
             
+            const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(tab.url || '')}`;
+            logInfo('URL сайдпанели', { tabId, sidebarUrl });
+            
+            // Настраиваем сайдпанель
             await chrome.sidePanel.setOptions({
                 tabId: tabId,
                 path: sidebarUrl,
                 enabled: true
             });
-            logInfo('Сайдпанель включена', { tabId, url: sidebarUrl });
-            
-            // Пытаемся открыть сайдпанель
-            try {
-                await chrome.sidePanel.open({ tabId: tabId });
-                logInfo('Сайдпанель открыта успешно', { tabId });
-            } catch (openError) {
-                logInfo('Не удалось открыть сайдпанель автоматически', { tabId, error: openError.message });
-                logInfo('Пользователь может открыть сайдпанель вручную через меню браузера', { tabId });
-            }
+            logInfo('Сайдпанель включена и настроена', { tabId, url: sidebarUrl });
+            logInfo('Пользователь может открыть сайдпанель вручную через меню браузера', { tabId });
         }
     } catch (error) {
         logError('Ошибка переключения сайдпанели', { tabId, error });

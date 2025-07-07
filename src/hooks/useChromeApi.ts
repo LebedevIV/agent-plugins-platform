@@ -139,13 +139,25 @@ export async function closeSidebarIfIncompatible(tabId: number, url: string): Pr
 export async function manageSidebarForSite(tabId: number, url: string): Promise<void> {
     try {
         if (isSiteCompatible(url)) {
-            // На совместимых сайтах - включаем и открываем сайдпанель
+            // На совместимых сайтах - настраиваем и включаем сайдпанель
+            const sidebarUrl = `sidepanel.html?tabId=${tabId}&url=${encodeURIComponent(url || '')}`;
+            
             await chrome.sidePanel.setOptions({
                 tabId,
+                path: sidebarUrl,
                 enabled: true
             });
-            await chrome.sidePanel.open({ tabId });
-            logInfo('Сайдпанель открыта для совместимого сайта', { tabId, url });
+            
+            logInfo('Сайдпанель настроена для совместимого сайта', { tabId, url, sidebarUrl });
+            
+            // Пытаемся открыть сайдпанель
+            try {
+                await chrome.sidePanel.open({ tabId });
+                logInfo('Сайдпанель открыта для совместимого сайта', { tabId, url });
+            } catch (openError) {
+                logInfo('Не удалось автоматически открыть сайдпанель', { tabId, url, error: openError.message });
+                logInfo('Пользователь может открыть сайдпанель вручную', { tabId });
+            }
         } else {
             // На несовместимых сайтах - отключаем сайдпанель
             await chrome.sidePanel.setOptions({

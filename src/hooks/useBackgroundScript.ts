@@ -47,12 +47,6 @@ export async function initializeBackgroundScript(): Promise<void> {
         // Инициализируем менеджер состояний
         initializeStateManager();
         
-        // Проверяем связь
-        const isConnected = await ping();
-        if (!isConnected) {
-            logWarn('Background script не может связаться с runtime');
-        }
-        
         // Настраиваем обработчики событий вкладок
         setupTabEventHandlers();
         
@@ -194,6 +188,7 @@ export async function handleUIMessage(message: any, sender: any): Promise<any> {
                 return { success: true };
 
             case 'TOGGLE_SIDEBAR_REQUEST':
+            case 'TOGGLE_SIDEBAR':
                 if (!isValidTabId(tabId)) {
                     return { success: false, error: 'Invalid tabId' };
                 }

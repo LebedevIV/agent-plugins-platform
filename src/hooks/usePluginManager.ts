@@ -59,17 +59,33 @@ export function getCompatibleSites(): string[] {
     try {
         const sites = new Set<string>();
         
+        // Добавляем тестовые домены для разработки и тестирования
+        const testDomains = [
+            'localhost',
+            '127.0.0.1'
+        ];
+        testDomains.forEach(domain => sites.add(domain));
+        
         // Здесь должна быть логика получения плагинов из background script
         // Пока используем статический список на основе известных плагинов
         const knownPlugins = [
             {
                 manifest: {
-                    host_permissions: ["*://*.ozon.ru/*"]
+                    host_permissions: [
+                        "*://*.ozon.ru/*",
+                        "http://localhost/*",
+                        "http://127.0.0.1/*"
+                    ]
                 }
             },
             {
                 manifest: {
-                    host_permissions: ["*://*.google.com/*", "*://*.google.ru/*"]
+                    host_permissions: [
+                        "*://*.google.com/*", 
+                        "*://*.google.ru/*",
+                        "http://localhost/*",
+                        "http://127.0.0.1/*"
+                    ]
                 }
             }
         ];

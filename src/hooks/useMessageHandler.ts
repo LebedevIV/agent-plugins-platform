@@ -46,7 +46,8 @@ export async function ping(): Promise<boolean> {
         const response = await sendMessageWithResponse({ type: 'PING' });
         return response.success && response.pong === true;
     } catch (error) {
-        console.error('[useMessageHandler] Ping failed:', error);
+        // Игнорируем ошибку при инициализации - это нормально
+        console.debug('[useMessageHandler] Ping failed during initialization:', error);
         return false;
     }
 }
