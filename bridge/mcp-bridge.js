@@ -15,7 +15,16 @@ function initializeCommunication() {
     const pyodideWorker = getWorker();
 
     pyodideWorker.onmessage = (event) => {
-        const { type, callId, result, error, func, args } = event.data;
+        const { type, callId, result, error, func, args, status, message } = event.data;
+
+        if (type === 'pyodide_status') {
+            // Обрабатываем статусные сообщения от Pyodide
+            if (window.activeWorkflowLogger) {
+                const statusType = status === 'loading' ? 'info' : status === 'ready' ? 'success' : 'error';
+                window.activeWorkflowLogger.addMessage('PYODIDE', message, statusType);
+            }
+            return;
+        }
 
         if (type === 'host_call') {
             if (window.hostApi && typeof window.hostApi[func] === 'function') {

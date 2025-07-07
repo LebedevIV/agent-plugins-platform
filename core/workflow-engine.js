@@ -8,9 +8,11 @@ import { runPythonTool } from '../bridge/mcp-bridge.js';
 import { createRunLogger } from '../ui/log-manager.js';
 
 export async function runWorkflow(pluginId) {
-  // --- ▼▼▼ ИСПРАВЛЕНИЕ ОПЕЧАТКИ ▼▼▼ ---
-  window.activeWorkflowLogger = createRunLogger(`Воркфлоу плагина: ${pluginId}`);
-  const logger = window.activeWorkflowLogger; // Используем правильное имя
+  // --- ▼▼▼ ИСПРАВЛЕНИЕ ПАРАМЕТРОВ ▼▼▼ ---
+  const runId = `workflow-${pluginId}-${Date.now()}`;
+  const title = `Воркфлоу плагина: ${pluginId}`;
+  window.activeWorkflowLogger = createRunLogger(runId, title);
+  const logger = window.activeWorkflowLogger;
   // --- ▲▲▲ КОНЕЦ ИСПРАВЛЕНИЯ ▲▲▲ ---
 
   logger.addMessage('ENGINE', `▶️ Запуск воркфлоу...`);
@@ -20,7 +22,23 @@ export async function runWorkflow(pluginId) {
   const workflow = await loadWorkflowDefinition(pluginId, logger);
   if (!workflow) return;
 
-  const context = { steps: {}, logger: logger };
+  // Получаем HTML страницы для передачи в плагины
+  let pageHtml = '';
+  try {
+    if (window.hostApi && typeof window.hostApi.getActivePageContent === 'function') {
+      const pageContent = await window.hostApi.getActivePageContent();
+      pageHtml = pageContent.html || '';
+      logger.addMessage('ENGINE', `📄 Получен HTML страницы (${pageHtml.length} символов)`);
+    }
+  } catch (error) {
+    logger.addMessage('WARNING', `⚠️ Не удалось получить HTML страницы: ${error.message}`);
+  }
+
+  const context = { 
+    steps: {}, 
+    logger: logger,
+    page_html: pageHtml
+  };
 
   for (const step of workflow.steps) {
     logger.addMessage('ENGINE', `➡️ Выполнение шага: ${step.id} (инструмент: ${step.tool})`);
@@ -48,6 +66,23 @@ export async function runWorkflow(pluginId) {
       return;
     }
   }
+
+  // Отображаем финальный результат с обработкой ошибок
+  try {
+    const lastStep = workflow.steps[workflow.steps.length - 1];
+    if (lastStep && context.steps[lastStep.id]) {
+      const finalResult = context.steps[lastStep.id].output;
+      // Пытаемся отрендерить структурированный результат
+      logger.renderResult(lastStep.id, finalResult);
+    }
+  } catch (error) {
+    console.error('Ошибка при рендеринге результата:', error);
+    // В случае сбоя, показываем сырой результат как простое сообщение
+    const lastStep = workflow.steps[workflow.steps.length - 1];
+    const rawResult = context.steps[lastStep.id]?.output;
+    logger.addMessage('ENGINE', `Не удалось отобразить результат. Сырые данные: ${JSON.stringify(rawResult)}`, 'error');
+  }
+
   logger.addMessage('ENGINE', `🏁 Воркфлоу успешно завершен.`);
 }
 

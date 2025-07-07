@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APP - Боковая панель</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+    <div class="sidebar-container">
+        <!-- Заголовок -->
+        <header class="sidebar-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <h1>APP</h1>
+                    <div class="context-checker">
+                        <button id="context-check-btn" title="Проверить контекст страницы">🔄</button>
+                        <span id="context-url-display" class="context-url"></span>
+                    </div>
+                </div>
+                <button id="settings-btn" class="settings-btn" title="Настройки платформы">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Панель плагинов -->
+        <div class="plugins-panel">
+            <h3>Плагины</h3>
+            <div id="plugins-buttons" class="plugins-grid">
+                <!-- Кнопки плагинов будут добавлены динамически -->
+            </div>
+        </div>
+
+        <!-- Чат -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <h3>Чат с плагинами</h3>
+                <button id="clear-chat-btn" class="clear-chat-btn" title="Очистить чат">🗑️</button>
+            </div>
+            
+            <div id="chat-messages" class="chat-messages">
+                <!-- Сообщения чата -->
+            </div>
+
+            <!-- Поле ввода -->
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="chat-input" 
+                        class="chat-input" 
+                        placeholder="Введите сообщение..."
+                        rows="2"
+                    ></textarea>
+                    <button id="send-btn" class="send-btn" title="Отправить">
+                        <span class="send-icon">▶️</span>
+                    </button>
+                </div>
+                <div class="typing-indicator" id="typing-indicator">
+                    <span>Печатает...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="sidepanel.js"></script>
+</body>
+</html> 

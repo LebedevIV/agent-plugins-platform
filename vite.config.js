@@ -15,8 +15,10 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
+        options: resolve(__dirname, 'options.html'),
         background: resolve(__dirname, 'src/background.ts'),
+        content: resolve(__dirname, 'content.js'),
+        sidepanel: resolve(__dirname, 'sidepanel.html'),
       },
       output: {
         entryFileNames: '[name].js',
@@ -47,6 +49,14 @@ export default defineConfig({
         },
         {
           src: 'public/logo.svg',
+          dest: '.'
+        },
+        {
+          src: 'sidepanel.css',
+          dest: '.'
+        },
+        {
+          src: 'sidepanel.js',
           dest: '.'
         }
       ]

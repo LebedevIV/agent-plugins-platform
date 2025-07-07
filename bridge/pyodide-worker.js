@@ -9,7 +9,20 @@ const hostCallPromises = new Map();
 
 async function initializePyodide() {
     if (pyodide) return;
+    
+    // Уведомляем о начале загрузки
+    self.postMessage({ type: 'pyodide_status', status: 'loading', message: 'Загрузка Python среды...' });
+    
+    try {
     pyodide = await loadPyodide({ indexURL: '../pyodide/' });
+        
+        // Уведомляем об успешной загрузке
+        self.postMessage({ type: 'pyodide_status', status: 'ready', message: 'Python среда готова' });
+    } catch (error) {
+        // Уведомляем об ошибке загрузки
+        self.postMessage({ type: 'pyodide_status', status: 'error', message: `Ошибка загрузки Python: ${error.message}` });
+        throw error;
+    }
     
     pyodide.globals.set('js', {
         sendMessageToChat: (message) => {

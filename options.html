@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" /><link rel="icon" type="image/svg+xml" href="logo.svg" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>APP - Панель Управления</title><link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="ide-layout">
+      <aside class="ide-sidebar-left">
+        <header><h1>Agent-Plugins-Platform</h1><p>Панель управления плагинами</p></header>
+        <nav class="tab-nav">
+          <button class="tab-button active" data-tab="plugins">Плагины</button>
+          <button class="tab-button" data-tab="settings">Настройки</button>
+        </nav>
+      </aside>
+      <main class="ide-main-content">
+        <div id="plugins" class="tab-content active">
+          <h2>Доступные плагины</h2>
+          <div id="plugins-list">Загрузка плагинов...</div>
+        </div>
+        <div id="settings" class="tab-content hidden">
+          <h2>Настройки Платформы</h2>
+          <div class="settings-container">
+            <div class="settings-section">
+              <h3>API Ключи нейросетей</h3>
+              <div id="ai-keys-settings">
+                <!-- Фиксированные ключи (неудаляемые) -->
+                <div class="ai-key-item fixed-key">
+                  <div class="ai-key-header">
+                    <h4>Google Gemini (Flash) - Базовый анализ</h4>
+                    <span class="key-status" id="gemini-flash-status">Не настроен</span>
+                    <span class="key-badge free">Бесплатный</span>
+                  </div>
+                  <div class="ai-key-input">
+                    <input type="password" id="gemini-flash-key" placeholder="Введите API ключ">
+                    <button onclick="pasteFromClipboard('gemini-flash-key')">Вставить</button>
+                    <button onclick="copyToClipboard('gemini-flash-key')">Копировать</button>
+                  </div>
+                  <div class="curl-validator">
+                    <input type="text" id="gemini-flash-curl" placeholder="Вставьте curl запрос для извлечения ключа">
+                    <button onclick="extractKeyFromCurl('gemini-flash-curl', 'gemini-flash-key')">Извлечь ключ</button>
+                  </div>
+                </div>
+                
+                <div class="ai-key-item fixed-key">
+                  <div class="ai-key-header">
+                    <h4>Gemini 2.5 Pro - Глубокий анализ</h4>
+                    <span class="key-status" id="gemini-25-status">Не настроен</span>
+                    <span class="key-badge free">Бесплатный</span>
+                  </div>
+                  <div class="ai-key-input">
+                    <input type="password" id="gemini-25-key" placeholder="Введите API ключ">
+                    <button onclick="pasteFromClipboard('gemini-25-key')">Вставить</button>
+                    <button onclick="copyToClipboard('gemini-25-key')">Копировать</button>
+                  </div>
+                  <div class="curl-validator">
+                    <input type="text" id="gemini-25-curl" placeholder="Вставьте curl запрос для извлечения ключа">
+                    <button onclick="extractKeyFromCurl('gemini-25-curl', 'gemini-25-key')">Извлечь ключ</button>
+                  </div>
+                </div>
+                
+                <!-- Пользовательские ключи (удаляемые) -->
+                <div class="custom-keys-section">
+                  <h4>Пользовательские API ключи</h4>
+                  <div id="custom-keys-list">
+                    <!-- Здесь будут добавляться пользовательские ключи -->
+                  </div>
+                  <button onclick="addCustomKey()" class="add-key-btn">+ Добавить новый ключ</button>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button onclick="saveAIKeys()" class="save-btn">Сохранить все ключи</button>
+                <button onclick="testAIKeys()" class="test-btn">Тестировать подключения</button>
+              </div>
+            </div>
+        </div>
+        </div>
+      </main>
+      <aside class="ide-sidebar-right">
+        <h2>Детали плагина</h2>
+        <p>Выберите плагин из списка слева.</p>
+      </aside>
+    </div>
+    <script type="module" src="/ui/test-harness.js"></script>
+  </body>
+</html>

@@ -7,7 +7,10 @@
   "permissions": [
     "scripting",
     "activeTab",
-    "storage" 
+    "storage",
+    "sidePanel",
+    "contextMenus",
+    "tabs"
   ],
 
   "host_permissions": [
@@ -18,10 +21,28 @@
     "service_worker": "background.js",
     "type": "module"
   },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>",
+        "file://*/*",
+        "http://localhost:*/*",
+        "https://localhost:*/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
   
   "action": {
     "default_title": "Открыть Панель Управления APP",
     "default_icon": "logo.svg" 
+  },
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
 
   "icons": {
