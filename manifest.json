@@ -36,7 +36,7 @@
   ],
   
   "action": {
-    "default_title": "Открыть Панель Управления APP",
+    "default_title": "Agent-Plugins-Platform - Открыть боковую панель",
     "default_icon": "logo.svg" 
   },
 

@@ -12,6 +12,11 @@ const server = http.createServer((req, res) => {
   
   if (req.url === '/' || req.url === '/test-page.html') {
     filePath = path.join(__dirname, 'test-page-fixed.html');
+  } else if (req.url === '/test-icon-click.html') {
+    // Отдаем тестовую страницу для проверки клика по иконке
+    const testIconClickHtml = fs.readFileSync('test-icon-click.html', 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(testIconClickHtml);
   } else if (req.url === '/style.css') {
     filePath = path.join(__dirname, 'style.css');
     contentType = 'text/css';
