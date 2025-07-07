@@ -1,6 +1,12 @@
 # AI Assistant Memory Bank: Agent-Plugins-Platform
 *Полный контекст, видение и опыт работы с проектом*
 
+> 📚 **Внешние ссылки на документацию:**
+> - [Обзор системы самосохранения](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/self-preservation-overview.md)
+> - [Отчет о реализации](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/self-preservation-implementation-report.md)
+> - [Обновления Memory Bank](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/4b78f674002bcf6a0c1849020ae2efa7175fc39c/update-summary.md)
+> - [🚀 Быстрые команды](https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/6df6ab34e7aafeec1a5e4d7cebd50fc44101d3ec/quick-commands.md)
+
 ---
 
 ## 🧠 МОЯ СУТЬ И ПОДХОД К РАБОТЕ
