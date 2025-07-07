@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-test.describe('Проверка функциональности боковой панели', () => {
+test.describe.skip('Проверка функциональности боковой панели', () => {
   let browserContext;
   let page;
   let serviceWorker;

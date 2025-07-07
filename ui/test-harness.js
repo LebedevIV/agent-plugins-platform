@@ -12,6 +12,13 @@ import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } fro
 import { createPluginCard } from './PluginCard.js';
 import { createRunLogger } from './log-manager.js';
 import { createJsonViewer } from './json-viewer.js';
+import { usePluginList } from './hooks/usePluginList.js';
+import { usePluginDetails } from './hooks/usePluginDetails.js';
+import { usePluginState } from './hooks/usePluginState.js';
+import { useErrorHandler } from './hooks/useErrorHandler.js';
+import { useAIKeys } from './hooks/useAIKeys.js';
+import { useCustomKeyNames } from './hooks/useCustomKeyNames.js';
+import { useFileViewer } from './hooks/useFileViewer.js';
 
 // --- КОД ИЗ core/plugin-state-manager.js ---
 const pluginStateManager = {
@@ -89,38 +96,42 @@ function handleUrlParameters() {
 
 // --- Основная логика ---
 
-// Функция для отображения информации о плагине
+// Новый способ отображения информации о плагине через хуки
 async function showPluginInfo(plugin) {
-    const state = await pluginStateManager.getState(plugin.name);
-    
+    const { manifest, state, domains } = await usePluginDetails(plugin.id);
     // Убираем выделение со всех карточек
     document.querySelectorAll('.plugin-card').forEach(card => {
         card.classList.remove('selected');
     });
-    
     // Выделяем карточку текущего плагина
     const currentCard = document.querySelector(`[data-plugin-name="${plugin.name}"]`);
     if (currentCard) {
         currentCard.classList.add('selected');
     }
-    
     // --- Обновляем правую колонку ---
     const rightSidebar = document.querySelector('.ide-sidebar-right');
     if (rightSidebar) {
         rightSidebar.innerHTML = `
           <div class="plugin-info">
-            <h2>${plugin.name}</h2>
+            <h2>${manifest.name}</h2>
             <div class="plugin-meta">
-              <span class="version">Версия: ${plugin.version}</span>
+              <span class="version">Версия: ${manifest.version}</span>
               <span class="id">ID: ${plugin.id}</span>
             </div>
             <div class="plugin-description">
               <h3>Описание</h3>
-              <p>${plugin.description}</p>
+              <p>${manifest.description}</p>
             </div>
+            ${domains.length > 0 ? `
+            <div class="plugin-domains">
+              <h3>🌐 Плагин активен на сайтах:</h3>
+              <ul class="plugin-domains-list">
+                ${domains.map(domain => `<li><code>${domain}</code></li>`).join('')}
+              </ul>
+            </div>
+            ` : ''}
             <div class="plugin-actions">
               <h3>Действия</h3>
-              
               <div class="plugin-toggle">
                 <label class="toggle-switch">
                   <input type="checkbox" data-plugin-name="${plugin.name}" data-state-key="enabled" 
@@ -129,7 +140,6 @@ async function showPluginInfo(plugin) {
                 </label>
                 <span class="toggle-label">Включить плагин</span>
               </div>
-
               <div class="plugin-toggle">
                 <label class="toggle-switch">
                   <input type="checkbox" data-plugin-name="${plugin.name}" data-state-key="autoRun"
@@ -138,7 +148,6 @@ async function showPluginInfo(plugin) {
                 </label>
                 <span class="toggle-label">Автоматическое срабатывание</span>
               </div>
-
               <button class="view-manifest-btn" onclick="viewManifest('${plugin.id}')">
                 📋 Просмотреть манифест
               </button>
@@ -160,27 +169,39 @@ async function showPluginInfo(plugin) {
     }
 }
 
+// Новый способ отображения списка плагинов через хук
+async function displayPlugins() {
+    const plugins = await usePluginList();
+    const pluginsList = document.getElementById('plugins-list');
+    pluginsList.innerHTML = '';
+    plugins.forEach(plugin => {
+        const card = createPluginCard(plugin);
+        card.setAttribute('data-plugin-name', plugin.name);
+        card.onclick = () => showPluginInfo(plugin);
+        pluginsList.appendChild(card);
+    });
+}
+
 // Новый глобальный обработчик для всех переключателей
 window.handleToggleChange = async function(checkbox) {
     const pluginName = checkbox.dataset.pluginName;
     const stateKey = checkbox.dataset.stateKey; // 'enabled' или 'autoRun'
     const value = checkbox.checked;
-
+    const { error, success } = useErrorHandler();
     try {
-        const currentState = await pluginStateManager.getState(pluginName);
+        const currentState = await usePluginState.getState(pluginName);
         const newState = { ...currentState, [stateKey]: value };
-        await pluginStateManager.setState(pluginName, newState);
-        
+        await usePluginState.setState(pluginName, newState);
         // Обновляем UI карточки, если меняли enabled
         if (stateKey === 'enabled') {
             const card = document.querySelector(`.plugin-card[data-plugin-name="${pluginName}"]`);
-        if (card) {
+            if (card) {
                 card.classList.toggle('disabled', !value);
             }
         }
-        showSuccessToast(`Настройка "${pluginName}" сохранена.`);
-    } catch (error) {
-        showErrorToast(`Ошибка сохранения: ${error.message}`);
+        success(`Настройка "${pluginName}" сохранена.`);
+    } catch (e) {
+        error(`Ошибка сохранения: ${e.message}`);
         checkbox.checked = !value; // Возвращаем в исходное состояние
     }
 }
@@ -196,42 +217,64 @@ async function getPluginById(pluginId) {
     }
 }
 
-// Функции для просмотра файлов плагина
-window.viewManifest = function(pluginId) {
-    showInfoToast(`Просмотр манифеста плагина ${pluginId}`);
-    // Здесь можно добавить логику для отображения содержимого manifest.json
+// Модальное окно для просмотра файлов
+function showFileModal(title, contentHtml) {
+    let modal = document.getElementById('file-viewer-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'file-viewer-modal';
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100vw';
+        modal.style.height = '100vh';
+        modal.style.background = 'rgba(0,0,0,0.5)';
+        modal.style.zIndex = '9999';
+        modal.innerHTML = `<div id="file-viewer-content" style="background:#fff;max-width:700px;margin:40px auto;padding:24px;border-radius:8px;position:relative;box-shadow:0 8px 32px #0002;">
+            <button id="close-file-viewer" style="position:absolute;top:12px;right:12px;font-size:1.5em;">×</button>
+            <h2 style="margin-top:0;">${title}</h2>
+            <div id="file-viewer-body"></div>
+        </div>`;
+        document.body.appendChild(modal);
+        document.getElementById('close-file-viewer').onclick = () => modal.remove();
+    } else {
+        modal.querySelector('h2').textContent = title;
+        modal.style.display = 'block';
+    }
+    const body = document.getElementById('file-viewer-body');
+    body.innerHTML = '';
+    if (typeof contentHtml === 'string') {
+        body.innerHTML = `<pre style="white-space:pre-wrap;">${contentHtml}</pre>`;
+    } else if (contentHtml instanceof HTMLElement) {
+        body.appendChild(contentHtml);
+    }
 }
 
-window.viewWorkflow = function(pluginId) {
-    showInfoToast(`Просмотр workflow плагина ${pluginId}`);
-    // Здесь можно добавить логику для отображения содержимого workflow.json
-}
-
-// Отображение плагинов
-async function displayPlugins() {
-    const pluginsListContainer = document.getElementById('plugins-list');
-    if (!pluginsListContainer) return;
-    
+// Просмотр manifest.json
+window.viewManifest = async function(pluginId) {
+    const { error } = useErrorHandler();
     try {
-        const plugins = await getAvailablePlugins();
-        const states = await pluginStateManager.getAllStates();
+        const text = await useFileViewer(pluginId, 'manifest.json');
+        const json = JSON.parse(text);
+        const container = document.createElement('div');
+        createJsonViewer(json, container);
+        showFileModal('manifest.json', container);
+    } catch (e) {
+        error('Ошибка загрузки manifest.json: ' + e.message);
+    }
+}
 
-        pluginsListContainer.innerHTML = '';
-        plugins.forEach(plugin => {
-            const pluginCard = createPluginCard(plugin);
-            pluginCard.dataset.pluginName = plugin.name;
-            
-            const state = states[plugin.name] || { enabled: true };
-            if (!state.enabled) {
-                pluginCard.classList.add('disabled');
-            }
-            
-            pluginCard.onclick = () => showPluginInfo(plugin);
-            pluginsListContainer.appendChild(pluginCard);
-        });
-    } catch (error) {
-        pluginsListContainer.textContent = `Ошибка при загрузке плагинов: ${error.message}`;
-        console.error("Ошибка в displayPlugins:", error);
+// Просмотр workflow.json
+window.viewWorkflow = async function(pluginId) {
+    const { error } = useErrorHandler();
+    try {
+        const text = await useFileViewer(pluginId, 'workflow.json');
+        const json = JSON.parse(text);
+        const container = document.createElement('div');
+        createJsonViewer(json, container);
+        showFileModal('workflow.json', container);
+    } catch (e) {
+        error('Ошибка загрузки workflow.json: ' + e.message);
     }
 }
 
@@ -301,121 +344,46 @@ window.extractKeyFromCurl = function(curlInputId, keyInputId) {
     }
 }
 
-// Сохранение всех API ключей
-window.saveAIKeys = function() {
+// Загрузка сохраненных ключей
+async function loadSavedKeys() {
+    const { error } = useErrorHandler();
     try {
-        const keys = {
-            'gemini-flash': document.getElementById('gemini-flash-key').value,
-            'gemini-25': document.getElementById('gemini-25-key').value
-        };
-        
-        // Добавляем пользовательские ключи
-        const customKeys = getCustomKeys();
-        Object.assign(keys, customKeys);
-        
-        // Сохраняем в localStorage
-        localStorage.setItem('aiApiKeys', JSON.stringify(keys));
-        
-        // Обновляем статусы
+        const keys = await useAIKeys.getAllKeys();
+        if (keys['gemini-flash']) {
+            document.getElementById('gemini-flash-key').value = keys['gemini-flash'];
+        }
+        if (keys['gemini-25']) {
+            document.getElementById('gemini-25-key').value = keys['gemini-25'];
+        }
+        loadCustomKeys(keys);
         updateKeyStatuses();
-        
-        showSuccessToast('API ключи сохранены');
-    } catch (error) {
-        console.error('Ошибка сохранения ключей:', error);
-        showErrorToast('Ошибка сохранения ключей');
+    } catch (e) {
+        error('Ошибка загрузки ключей: ' + e.message);
     }
 }
 
-// Тестирование API ключей
-window.testAIKeys = async function() {
+// Сохранение всех ключей
+window.saveAIKeys = async function() {
+    const { success, error } = useErrorHandler();
     try {
-        const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
-        const results = {};
-        
-        // Тестируем каждый ключ
-        for (const [keyName, keyValue] of Object.entries(keys)) {
-            if (keyValue) {
-                try {
-                    // Здесь будет реальное тестирование API
-                    // Пока просто проверяем формат ключа
-                    const isValid = keyValue.length > 20 && keyValue.includes('AIza');
-                    results[keyName] = isValid;
-                } catch (error) {
-                    results[keyName] = false;
-                }
-            } else {
-                results[keyName] = false;
-            }
+        await useAIKeys.setKey('gemini-flash', document.getElementById('gemini-flash-key').value);
+        await useAIKeys.setKey('gemini-25', document.getElementById('gemini-25-key').value);
+        // Сохраняем пользовательские ключи
+        const customKeys = getCustomKeys();
+        for (const keyId in customKeys) {
+            await useAIKeys.setKey(keyId, customKeys[keyId]);
         }
-        
-        // Обновляем статусы
-        updateKeyStatuses(results);
-        
-        showSuccessToast('Тестирование завершено');
-    } catch (error) {
-        console.error('Ошибка тестирования ключей:', error);
-        showErrorToast('Ошибка тестирования ключей');
+        success('Ключи сохранены');
+        updateKeyStatuses();
+    } catch (e) {
+        error('Ошибка сохранения ключей: ' + e.message);
     }
-}
-
-// Обновление статусов ключей
-function updateKeyStatuses(testResults = null) {
-    const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
-    
-    // Обновляем статусы фиксированных ключей
-    const fixedStatusElements = {
-        'gemini-flash': document.getElementById('gemini-flash-status'),
-        'gemini-25': document.getElementById('gemini-25-status')
-    };
-    
-    for (const [keyName, statusElement] of Object.entries(fixedStatusElements)) {
-        if (statusElement) {
-            const hasKey = keys[keyName] && keys[keyName].length > 0;
-            const isTested = testResults && keyName in testResults;
-            
-            if (isTested && testResults[keyName]) {
-                statusElement.textContent = 'Работает';
-                statusElement.className = 'key-status configured';
-            } else if (hasKey) {
-                statusElement.textContent = 'Настроен';
-                statusElement.className = 'key-status configured';
-            } else {
-                statusElement.textContent = 'Не настроен';
-                statusElement.className = 'key-status';
-            }
-        }
-    }
-    
-    // Обновляем статусы пользовательских ключей
-    const customKeyElements = document.querySelectorAll('.custom-key-item');
-    customKeyElements.forEach(element => {
-        const keyId = element.id;
-        const statusElement = element.querySelector('.key-status');
-        const keyInput = element.querySelector('input[type="password"]');
-        
-        if (statusElement && keyInput) {
-            const hasKey = keyInput.value && keyInput.value.length > 0;
-            const isTested = testResults && keyId in testResults;
-            
-            if (isTested && testResults[keyId]) {
-                statusElement.textContent = 'Работает';
-                statusElement.className = 'key-status configured';
-            } else if (hasKey) {
-                statusElement.textContent = 'Настроен';
-                statusElement.className = 'key-status configured';
-            } else {
-                statusElement.textContent = 'Не настроен';
-                statusElement.className = 'key-status';
-            }
-        }
-    });
 }
 
 // Добавление пользовательского ключа
 window.addCustomKey = function() {
     const customKeysList = document.getElementById('custom-keys-list');
     const keyId = 'custom-key-' + Date.now();
-    
     const keyHtml = `
         <div class="custom-key-item" id="${keyId}">
             <button class="remove-key-btn" onclick="removeCustomKey('${keyId}')">Удалить</button>
@@ -438,33 +406,29 @@ window.addCustomKey = function() {
             </div>
         </div>
     `;
-    
     customKeysList.insertAdjacentHTML('beforeend', keyHtml);
-    showSuccessToast('Добавлен новый ключ');
+    useErrorHandler().success('Добавлен новый ключ');
 }
 
 // Удаление пользовательского ключа
-window.removeCustomKey = function(keyId) {
+window.removeCustomKey = async function(keyId) {
     const keyElement = document.getElementById(keyId);
     if (keyElement) {
         keyElement.remove();
-        showSuccessToast('Ключ удален');
+        await useAIKeys.removeKey(keyId);
+        useErrorHandler().success('Ключ удален');
     }
 }
 
 // Обновление названия пользовательского ключа
-window.updateCustomKeyName = function(keyId, name) {
-    // Сохраняем название в localStorage
-    const customKeyNames = JSON.parse(localStorage.getItem('customKeyNames') || '{}');
-    customKeyNames[keyId] = name;
-    localStorage.setItem('customKeyNames', JSON.stringify(customKeyNames));
+window.updateCustomKeyName = async function(keyId, name) {
+    await useCustomKeyNames.setName(keyId, name);
 }
 
 // Получение пользовательских ключей
 function getCustomKeys() {
     const customKeys = {};
     const customKeyElements = document.querySelectorAll('.custom-key-item');
-    
     customKeyElements.forEach(element => {
         const keyId = element.id;
         const keyInput = element.querySelector('input[type="password"]');
@@ -472,41 +436,17 @@ function getCustomKeys() {
             customKeys[keyId] = keyInput.value;
         }
     });
-    
     return customKeys;
 }
 
-// Загрузка сохраненных ключей
-function loadSavedKeys() {
-    try {
-        const keys = JSON.parse(localStorage.getItem('aiApiKeys') || '{}');
-        
-        if (keys['gemini-flash']) {
-            document.getElementById('gemini-flash-key').value = keys['gemini-flash'];
-        }
-        if (keys['gemini-25']) {
-            document.getElementById('gemini-25-key').value = keys['gemini-25'];
-        }
-        
-        // Загружаем пользовательские ключи
-        loadCustomKeys(keys);
-        
-        updateKeyStatuses();
-    } catch (error) {
-        console.error('Ошибка загрузки ключей:', error);
-    }
-}
-
 // Загрузка пользовательских ключей
-function loadCustomKeys(keys) {
-    const customKeyNames = JSON.parse(localStorage.getItem('customKeyNames') || '{}');
-    
+async function loadCustomKeys(keys) {
+    const customKeyNames = await useCustomKeyNames.getAllNames();
     Object.keys(keys).forEach(keyId => {
         if (keyId.startsWith('custom-key-') && keys[keyId]) {
             // Воссоздаем элемент пользовательского ключа
             const customKeysList = document.getElementById('custom-keys-list');
             const keyName = customKeyNames[keyId] || 'Пользовательская нейросеть';
-            
             const keyHtml = `
                 <div class="custom-key-item" id="${keyId}">
                     <button class="remove-key-btn" onclick="removeCustomKey('${keyId}')">Удалить</button>
@@ -529,10 +469,73 @@ function loadCustomKeys(keys) {
                     </div>
                 </div>
             `;
-            
             customKeysList.insertAdjacentHTML('beforeend', keyHtml);
         }
     });
+}
+
+// Асинхронное обновление статусов ключей
+async function updateKeyStatuses(testResults = null) {
+    const keys = await useAIKeys.getAllKeys();
+    // Обновляем статусы фиксированных ключей
+    const fixedStatusElements = {
+        'gemini-flash': document.getElementById('gemini-flash-status'),
+        'gemini-25': document.getElementById('gemini-25-status')
+    };
+    for (const [keyName, statusElement] of Object.entries(fixedStatusElements)) {
+        if (statusElement) {
+            const hasKey = keys[keyName] && keys[keyName].length > 0;
+            const isTested = testResults && keyName in testResults;
+            if (isTested && testResults[keyName]) {
+                statusElement.textContent = 'Работает';
+                statusElement.className = 'key-status configured';
+            } else if (hasKey) {
+                statusElement.textContent = 'Настроен';
+                statusElement.className = 'key-status configured';
+            } else {
+                statusElement.textContent = 'Не настроен';
+                statusElement.className = 'key-status';
+            }
+        }
+    }
+    // Обновляем статусы пользовательских ключей
+    const customKeyElements = document.querySelectorAll('.custom-key-item');
+    customKeyElements.forEach(element => {
+        const keyId = element.id;
+        const statusElement = element.querySelector('.key-status');
+        const keyInput = element.querySelector('input[type="password"]');
+        if (statusElement && keyInput) {
+            const hasKey = keyInput.value && keyInput.value.length > 0;
+            const isTested = testResults && keyId in testResults;
+            if (isTested && testResults[keyId]) {
+                statusElement.textContent = 'Работает';
+                statusElement.className = 'key-status configured';
+            } else if (hasKey) {
+                statusElement.textContent = 'Настроен';
+                statusElement.className = 'key-status configured';
+            } else {
+                statusElement.textContent = 'Не настроен';
+                statusElement.className = 'key-status';
+            }
+        }
+    });
+}
+
+// Асинхронное тестирование ключей
+window.testAIKeys = async function() {
+    const { success, error } = useErrorHandler();
+    try {
+        const keys = await useAIKeys.getAllKeys();
+        const results = {};
+        // Пример теста: просто проверяем, что ключ не пустой (можно заменить на реальный API-запрос)
+        for (const keyName in keys) {
+            results[keyName] = keys[keyName] && keys[keyName].length > 0;
+        }
+        await updateKeyStatuses(results);
+        success('Тестирование завершено');
+    } catch (e) {
+        error('Ошибка тестирования ключей: ' + e.message);
+    }
 }
 
 // --- Запускаем все при загрузке страницы ---

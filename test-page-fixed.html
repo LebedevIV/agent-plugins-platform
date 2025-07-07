@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Тестовая страница для Agent-Plugins-Platform</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Тестовая страница для Agent-Plugins-Platform</h1>
+        
+        <div class="test-section">
+            <h2>📊 Статус расширения</h2>
+            <div id="extension-status" class="status error">❌ Расширение недоступно</div>
+            <div id="content-script-status" class="status error">❌ Content script не загружен</div>
+            <div id="sidebar-status" class="status error">❌ Сайдпанель не найдена</div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎮 Тестовые действия</h2>
+            <button onclick="testExtensionAPI()">Проверить API расширения</button>
+            <button onclick="testSidebarToggle()">Переключить сайдпанель</button>
+            <button onclick="testPluginRun()">Запустить тестовый плагин</button>
+            <button onclick="clearConsole()">Очистить консоль</button>
+        </div>
+
+        <div class="test-section">
+            <h2>📝 Консоль</h2>
+            <div id="console-output">
+                <div><span class="timestamp">[Загрузка...]</span> 🚀 Страница загружена, начинаем тестирование...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Прокси для Chrome API через postMessage
+        const chromeProxy = {
+            runtime: {
+                id: null,
+                sendMessage: (message, callback) => {
+                    const requestId = Date.now() + Math.random();
+                    
+                    // Сохраняем callback для ответа
+                    chromeProxy._callbacks = chromeProxy._callbacks || {};
+                    chromeProxy._callbacks[requestId] = callback;
+                    
+                    // Отправляем запрос в content script
+                    window.postMessage({
+                        type: 'CHROME_API_REQUEST',
+                        requestId,
+                        method: 'runtime.sendMessage',
+                        params: message
+                    }, '*');
+                }
+            }
+        };
+
+        // Функция для логирования в консоль страницы
+        function log(message, type = 'info') {
+            const consoleOutput = document.getElementById('console-output');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            consoleOutput.appendChild(logEntry);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // Функция для обновления статуса
+        function updateStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+        }
+
+        // Проверка API расширения
+        function testExtensionAPI() {
+            log('🔍 Проверяем API расширения...');
+            
+            if (window.APP_EXTENSION_LOADED) {
+                log('✅ Content script доступен');
+                
+                // Используем прокси Chrome API
+                chromeProxy.runtime.sendMessage({ type: 'TEST_MESSAGE' }, (response) => {
+                    if (response && response.success) {
+                        log(`✅ Сообщение отправлено успешно: ${JSON.stringify(response.result)}`);
+                    } else {
+                        log(`❌ Ошибка отправки сообщения: ${response?.error || 'Неизвестная ошибка'}`, 'error');
+                    }
+                });
+            } else {
+                log('❌ Content script недоступен', 'error');
+            }
+        }
+
+        // Тест переключения сайдпанели
+        function testSidebarToggle() {
+            log('🔄 Тестируем переключение сайдпанели...');
+            
+            if (window.APP_EXTENSION_LOADED) {
+                chromeProxy.runtime.sendMessage({ type: 'TOGGLE_SIDEBAR' }, (response) => {
+                    if (response && response.success) {
+                        log(`✅ Сайдпанель переключена: ${JSON.stringify(response.result)}`);
+                    } else {
+                        log(`❌ Ошибка переключения сайдпанели: ${response?.error || 'Неизвестная ошибка'}`, 'error');
+                    }
+                });
+            } else {
+                log('❌ Content script недоступен для переключения сайдпанели', 'error');
+            }
+        }
+
+        // Тест запуска плагина
+        function testPluginRun() {
+            log('🚀 Тестируем запуск плагина...');
+            
+            if (window.APP_EXTENSION_LOADED) {
+                chromeProxy.runtime.sendMessage({
+                    source: 'app-host-api',
+                    command: 'run_plugin',
+                    data: { pluginName: 'test-plugin' }
+                }, (response) => {
+                    if (response && response.success) {
+                        log(`✅ Плагин запущен: ${JSON.stringify(response.result)}`);
+                    } else {
+                        log(`❌ Ошибка запуска плагина: ${response?.error || 'Неизвестная ошибка'}`, 'error');
+                    }
+                });
+            } else {
+                log('❌ Content script недоступен для запуска плагина', 'error');
+            }
+        }
+
+        // Очистка консоли
+        function clearConsole() {
+            document.getElementById('console-output').innerHTML = '';
+            log('🧹 Консоль очищена');
+        }
+
+        // Слушаем postMessage от content script
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'APP_EXTENSION_LOADED') {
+                window.APP_EXTENSION_LOADED = event.data.data;
+                log(`✅ Маркер получен через postMessage: ${window.APP_EXTENSION_LOADED}`);
+                
+                // Обновляем статус
+                updateStatus('content-script-status', '✅ Content script загружен', 'success');
+            }
+            
+            // Обрабатываем ответы от Chrome API прокси
+            if (event.data && event.data.type === 'CHROME_API_RESPONSE') {
+                const { requestId, result, error, success } = event.data;
+                
+                if (chromeProxy._callbacks && chromeProxy._callbacks[requestId]) {
+                    const callback = chromeProxy._callbacks[requestId];
+                    delete chromeProxy._callbacks[requestId];
+                    
+                    if (success) {
+                        callback({ success: true, result });
+                    } else {
+                        callback({ success: false, error });
+                    }
+                }
+            }
+        });
+
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', () => {
+            log('🚀 Страница загружена, начинаем тестирование...');
+            
+            // Проверяем расширение
+            setTimeout(() => {
+                if (window.APP_EXTENSION_LOADED) {
+                    updateStatus('extension-status', '✅ Расширение доступно', 'success');
+                    log('✅ Расширение обнаружено и доступно');
+                } else {
+                    updateStatus('extension-status', '❌ Расширение недоступно', 'error');
+                    log('❌ Расширение не обнаружено', 'error');
+                }
+            }, 1000);
+
+            // Проверяем content script
+            setTimeout(() => {
+                if (window.APP_EXTENSION_LOADED) {
+                    updateStatus('content-script-status', '✅ Content script загружен', 'success');
+                    log('✅ Content script обнаружен');
+                } else {
+                    updateStatus('content-script-status', '❌ Content script не загружен', 'error');
+                    log('❌ Content script не обнаружен', 'error');
+                }
+            }, 2000);
+
+            // Проверяем сайдпанель
+            setTimeout(() => {
+                const sidebarFrame = document.querySelector('iframe[src*="sidepanel.html"]');
+                if (sidebarFrame) {
+                    updateStatus('sidebar-status', '✅ Сайдпанель найдена', 'success');
+                    log('✅ Сайдпанель обнаружена на странице');
+                } else {
+                    updateStatus('sidebar-status', '❌ Сайдпанель не найдена', 'error');
+                    log('❌ Сайдпанель не обнаружена на странице', 'error');
+                }
+            }, 3000);
+        });
+    </script>
+</body>
+</html> 

@@ -1,69 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Agent-Plugins-Platform (APP)",
-  "version": "0.9.1",
-  "description": "A browser extension for running sandboxed Python plugins with local dependencies.",
-  
-  "permissions": [
-    "scripting",
-    "activeTab",
-    "storage",
-    "sidePanel",
-    "contextMenus",
-    "tabs"
-  ],
-
-  "host_permissions": [
-    "<all_urls>"
-  ],
-
+  "name": "SidePanel Minimal Test",
+  "version": "1.0.0",
+  "description": "Минимальное расширение для теста штатного открытия боковой панели.",
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Открыть боковую панель",
+    "default_icon": "logo.svg"
+  },
+  "icons": {
+    "128": "logo.svg"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>",
-        "file://*/*",
-        "http://localhost:*/*",
-        "https://localhost:*/*"
-      ],
-      "js": ["content.js"],
-      "run_at": "document_end"
-    }
-  ],
-  
-  "action": {
-    "default_title": "Agent-Plugins-Platform - Открыть боковую панель",
-    "default_icon": "logo.svg" 
-  },
-
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": true
-  },
-
-  "icons": {
-    "128": "logo.svg"
-  },
-
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; connect-src *;"
-  },
-
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "plugins/*",
-        "logo.svg",
-        "pyodide/*",
-        "wheels/*"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
+  "permissions": [
+    "sidePanel",
+    "storage"
   ]
 }
