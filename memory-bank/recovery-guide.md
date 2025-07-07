@@ -140,6 +140,13 @@ https://gist.github.com/LebedevIV/6386d4c8a743dbfd1d3c7a3afdb5cb2c/raw/7b3680d27
 - [ ] Понимает обработку ошибок соединения
 - [ ] Знает о файле `memory-bank/test-page-methodology.md`
 
+### ✅ Исправления и улучшения (НОВОЕ - v0.9.5)
+- [ ] Понимает исправление клика по иконке расширения
+- [ ] Знает о добавлении обработчика chrome.action.onClicked
+- [ ] Понимает функцию toggleSidebarDirectly
+- [ ] Знает о тестовой странице test-icon-click.html
+- [ ] Понимает обновление default_title в manifest.json
+
 ## Troubleshooting
 
 ### Проблема: AI не отвечает как ожидается
